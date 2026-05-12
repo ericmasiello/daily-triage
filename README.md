@@ -28,9 +28,15 @@ Compiles in ~1s. No SPM, no Package.swift, no external dependencies.
 
 ## Output Format
 
+The binary outputs one of three modes depending on cache state and data changes:
+
+### FULL Mode
+
+Triggered on first run, expired cache (>1h), corrupt cache, or priority label changes.
+
 ```
 MODE: FULL
-REASON: first_run | cache_expired | cache_corrupt | cache_valid
+REASON: first_run | cache_expired | cache_corrupt | priority_labels_changed
 
 ---RAW_DATA---
 {
@@ -42,6 +48,43 @@ REASON: first_run | cache_expired | cache_corrupt | cache_valid
   "merged_branches": [...]
 }
 ---END_RAW_DATA---
+```
+
+### NO_CHANGES Mode
+
+Triggered when fresh data is identical to the cached snapshot.
+
+```
+MODE: NO_CHANGES
+CACHE_AGE_MINUTES: 5
+
+---PREVIOUS_REPORT---
+<cached markdown report>
+---END_PREVIOUS_REPORT---
+
+PREVIOUS_RECOMMENDATION: <cached recommendation line>
+```
+
+### DELTA Mode
+
+Triggered when some data changed but no full re-analysis triggers fired.
+
+```
+MODE: DELTA
+CACHE_AGE_MINUTES: 5
+CHANGES_SUMMARY: 3 changes detected
+
+---CHANGES---
+MR !11393: detailed_merge_status changed not_approved → approved
+MR !11500: added (Add new feature)
+Issue #200: labels added p::2; removed p::3
+---END_CHANGES---
+
+---PREVIOUS_REPORT---
+<cached markdown report>
+---END_PREVIOUS_REPORT---
+
+PREVIOUS_RECOMMENDATION: <cached recommendation line>
 ```
 
 ## Cache
@@ -65,12 +108,13 @@ Written to `~/.cache/eric-triage/last-run.json` with a 1-hour TTL. Schema:
 
 ```
 Sources/
-  main.swift    — Entry point and arg parsing
+  main.swift    — Entry point, arg parsing, output formatting
   Shell.swift   — Subprocess execution
   JSON.swift    — JSON array parsing
   Models.swift  — MR and issue field extraction
   Cache.swift   — Cache read/write/reason logic
   Fetch.swift   — Parallel data fetching (DispatchGroup)
+  Diff.swift    — Snapshot diffing and change detection
 ```
 
 ## Related Issues
