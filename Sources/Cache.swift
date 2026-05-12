@@ -71,6 +71,14 @@ func saveReport(_ reportText: String) {
     }
 }
 
+func cacheAgeMinutes(_ cache: [String: Any]) -> Int {
+    guard let ts = cache["timestamp"] as? String,
+          let date = ISO8601DateFormatter().date(from: ts) else {
+        return 0
+    }
+    return Int(Date().timeIntervalSince(date) / 60)
+}
+
 /// Determine why FULL mode is being triggered based on cache state.
 func determineReason() -> String {
     guard FileManager.default.fileExists(atPath: cachePath) else {
