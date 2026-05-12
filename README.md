@@ -22,6 +22,9 @@ Compiles in ~1s. No SPM, no Package.swift, no external dependencies.
 # Standard run — fetches data, outputs MODE: FULL, writes cache
 ./triage-cache
 
+# Bypass cache entirely — always runs FULL mode
+./triage-cache --force
+
 # Save an LLM-generated report to the cache
 ./triage-cache --save-report "<markdown report>"
 ```
@@ -32,11 +35,11 @@ The binary outputs one of three modes depending on cache state and data changes:
 
 ### FULL Mode
 
-Triggered on first run, expired cache (>1h), corrupt cache, or priority label changes.
+Triggered on first run, expired cache (>1h), corrupt cache, `--force` flag, or priority label changes.
 
 ```
 MODE: FULL
-REASON: first_run | cache_expired | cache_corrupt | priority_labels_changed
+REASON: first_run | cache_expired | cache_corrupt | forced | priority_labels_changed
 
 ---RAW_DATA---
 {
@@ -103,6 +106,23 @@ Written to `~/.cache/eric-triage/last-run.json` with a 1-hour TTL. Schema:
 ```
 
 `--save-report` updates the `report` and `recommendation` fields without re-fetching data.
+
+Cache directory and studio directory can be overridden via `TRIAGE_CACHE_DIR` and `TRIAGE_STUDIO_DIR` environment variables (used by the test suite).
+
+## Graceful Degradation
+
+- **Corrupt cache**: invalid JSON is deleted automatically and a fresh `FULL` run executes
+- **Schema mismatch**: treated as corrupt (same behavior)
+- **`glab` not found**: prints error to stderr, exits with code 1
+- **`glab` auth expired**: if 4+ data sources fail, prints error to stderr, exits with code 1
+
+## Tests
+
+```bash
+./tests/run-all.sh
+```
+
+Shell-based integration suite with 10 test cases. Mock `glab` and `git` scripts in `tests/mocks/` isolate the binary from real API calls. Fixture data lives in `tests/fixtures/`.
 
 ## Source Layout
 

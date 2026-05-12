@@ -1,8 +1,18 @@
 import Foundation
 
-let cacheDir = (NSHomeDirectory() as NSString).appendingPathComponent(".cache/eric-triage")
-let cachePath = (cacheDir as NSString).appendingPathComponent("last-run.json")
-let studioDir = (NSHomeDirectory() as NSString).appendingPathComponent("Sites/studio")
+let cacheDir: String = {
+    if let dir = ProcessInfo.processInfo.environment["TRIAGE_CACHE_DIR"] {
+        return dir
+    }
+    return (NSHomeDirectory() as NSString).appendingPathComponent(".cache/eric-triage")
+}()
+let cachePath: String = (cacheDir as NSString).appendingPathComponent("last-run.json")
+let studioDir: String = {
+    if let dir = ProcessInfo.processInfo.environment["TRIAGE_STUDIO_DIR"] {
+        return dir
+    }
+    return (NSHomeDirectory() as NSString).appendingPathComponent("Sites/studio")
+}()
 let ttlSeconds: TimeInterval = 3600
 
 /// Read cache file. Returns nil if missing, unreadable, or wrong schema version.
@@ -85,6 +95,7 @@ func determineReason() -> String {
         return "first_run"
     }
     guard let cache = readCache() else {
+        try? FileManager.default.removeItem(atPath: cachePath)
         return "cache_corrupt"
     }
     if let ts = cache["timestamp"] as? String,

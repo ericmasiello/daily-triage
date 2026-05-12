@@ -1,0 +1,29 @@
+#!/bin/bash
+# Mock glab CLI for integration tests.
+# Returns fixture JSON based on MOCK_FIXTURE_DIR and MOCK_FIXTURE_SET env vars.
+
+FIXTURE_DIR="${MOCK_FIXTURE_DIR:?MOCK_FIXTURE_DIR must be set}"
+FIXTURE_SET="${MOCK_FIXTURE_SET:-default}"
+
+# Simulate auth failure when requested
+if [[ "${MOCK_GLAB_AUTH_FAIL}" == "1" ]]; then
+  echo "error: token has expired" >&2
+  exit 1
+fi
+
+args="$*"
+
+if [[ "$args" == *"mr list"*"--not-draft"* ]]; then
+  cat "$FIXTURE_DIR/${FIXTURE_SET}/non_draft_mrs.json"
+elif [[ "$args" == *"mr list"*"--draft"* ]]; then
+  cat "$FIXTURE_DIR/${FIXTURE_SET}/draft_mrs.json"
+elif [[ "$args" == *"mr list"*"sandcastle"* ]]; then
+  cat "$FIXTURE_DIR/${FIXTURE_SET}/sandcastle_mrs.json"
+elif [[ "$args" == *"issue list"* ]]; then
+  cat "$FIXTURE_DIR/${FIXTURE_SET}/issues.json"
+elif [[ "$args" == *"auth status"* ]]; then
+  echo "Logged in as testuser"
+else
+  echo "mock glab: unknown command: $args" >&2
+  exit 1
+fi

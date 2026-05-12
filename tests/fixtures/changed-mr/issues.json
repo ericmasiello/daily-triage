@@ -1,0 +1,18 @@
+[
+  {
+    "iid": 10,
+    "title": "Fix navigation bug",
+    "labels": ["bug", "p::1"],
+    "created_at": "2026-04-20T08:00:00Z",
+    "web_url": "https://gitlab.com/test/project/-/issues/10",
+    "description": "The navigation menu does not collapse on mobile."
+  },
+  {
+    "iid": 11,
+    "title": "Add dark mode",
+    "labels": ["feature"],
+    "created_at": "2026-04-25T08:00:00Z",
+    "web_url": "https://gitlab.com/test/project/-/issues/11",
+    "description": "Implement dark mode toggle in settings."
+  }
+]

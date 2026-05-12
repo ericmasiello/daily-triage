@@ -21,6 +21,19 @@ guard FileManager.default.fileExists(atPath: studioDir) else {
     exit(1)
 }
 
+let forceMode = args.contains("--force")
+
+if forceMode {
+    let (snapshot, failCount) = fetchAllData()
+    if failCount >= 4 {
+        fputs("Error: multiple data sources failed. Check glab authentication (glab auth status).\n", stderr)
+        exit(1)
+    }
+    outputFull(reason: "forced", snapshot: snapshot)
+    writeCache(snapshot: snapshot)
+    exit(0)
+}
+
 let reason = determineReason()
 
 if reason != "cache_valid" {

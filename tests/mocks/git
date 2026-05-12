@@ -1,0 +1,15 @@
+#!/bin/bash
+# Mock git for integration tests.
+# Returns fixture data for the commands triage-cache uses.
+
+args="$*"
+
+if [[ "$args" == *"symbolic-ref"* ]]; then
+  echo "refs/remotes/origin/master"
+elif [[ "$args" == *"branch -r --merged"* ]]; then
+  echo "  origin/feature-done-1"
+  echo "  origin/feature-done-2"
+else
+  # Fall through to real git for any other command
+  /usr/bin/git "$@"
+fi
