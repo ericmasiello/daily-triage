@@ -25,15 +25,7 @@ This skill will be invoked when the user wants to create a PRD. You may skip ste
 
 6. **Label the PRD issue.** After creating the issue:
 
-   a. Ask the user which workstream this PRD belongs to. Present any existing `workstream:*` labels:
-      ```bash
-      gh label list --search "workstream:"
-      ```
-
-      If none fit, ask what the new workstream should be called and create the label:
-      ```bash
-      gh label create "workstream:<name>" --color "<hex>" --description "<description>"
-      ```
+   a. Ask the user which workstream this PRD belongs to. See [LABELS.md](../LABELS.md) for workstream conventions and CLI commands for listing/creating labels.
 
    b. Apply labels to the issue:
       ```bash

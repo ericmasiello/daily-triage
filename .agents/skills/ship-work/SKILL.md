@@ -116,10 +116,4 @@ Output:
 
 ## Label reference
 
-**Workstream** (one per issue): `workstream:*`
-
-**Status** (one per issue, mutually exclusive):
-- `status:blocked` — has open blockers
-- `status:ready` — unblocked, ready for implementation
-- `status:in-progress` — active work or PR open
-- `status:awaiting-review` — engineering work complete, PR awaiting review
+See [LABELS.md](../LABELS.md) for the full label definitions, status lifecycle, and CLI commands for swapping labels.

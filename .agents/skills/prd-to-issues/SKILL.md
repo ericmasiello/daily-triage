@@ -62,7 +62,7 @@ For each approved slice, create a GitHub issue. Use the `gh` CLI. Use the issue 
 
 Create issues in dependency order (blockers first) so you can reference real issue numbers in the "Blocked by" field.
 
-**Labels:** When creating each issue, apply labels via the `--label` flag:
+**Labels:** Apply labels via the `--label` flag. See [LABELS.md](../LABELS.md) for the full label reference.
 - Inherit the `workstream:*` label from the parent PRD
 - Apply `status:ready` if the issue has no blockers
 - Apply `status:blocked` if the issue is blocked by another slice
