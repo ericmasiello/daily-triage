@@ -126,7 +126,7 @@ func fetchAllData() -> FetchResult {
         sandcastleMRs = (decodeArray(out) as [RawMR]).map { MR(from: $0) }
     }
 
-    fetch("glab issue list -O json --per-page 100 --state all",
+    fetch("glab issue list -O json --per-page 100 --all",
           source: "issues") { out in
         let rawIssues: [RawIssue] = decodeArray(out)
         issuesList = rawIssues.map { Issue(from: $0) }
