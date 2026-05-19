@@ -11,31 +11,41 @@ if let idx = args.firstIndex(of: "--save-report") {
     exit(0)
 }
 
-let (_, _, glabExit) = shell("which glab")
-if glabExit != 0 {
+do {
+    _ = try shell("which glab")
+} catch {
     fputs("Error: glab CLI not found. Install: brew install glab\n", stderr)
     exit(1)
 }
-let (_, authErr, authExit) = shell("glab auth status")
-if authExit != 0 {
-    let detail = authErr.trimmingCharacters(in: .whitespacesAndNewlines)
+
+do {
+    _ = try shell("glab auth status")
+} catch {
     fputs("Error: glab authentication expired or invalid. Run: glab auth login\n", stderr)
-    if !detail.isEmpty { fputs("  \(detail)\n", stderr) }
+    fputs("  \(error)\n", stderr)
     exit(1)
 }
+
 guard FileManager.default.fileExists(atPath: studioDir) else {
     fputs("Error: \(studioDir) not found\n", stderr)
     exit(1)
 }
 
+func fetchOrDie() -> Snapshot {
+    switch fetchAllData() {
+    case .success(let snapshot):
+        return snapshot
+    case .failure(let errors):
+        fputs("Error: all data sources failed. Check glab authentication (glab auth status).\n", stderr)
+        for e in errors { fputs("  - \(e)\n", stderr) }
+        exit(1)
+    }
+}
+
 let forceMode = args.contains("--force")
 
 if forceMode {
-    let (snapshot, failCount) = fetchAllData()
-    if failCount >= 4 {
-        fputs("Error: multiple data sources failed. Check glab authentication (glab auth status).\n", stderr)
-        exit(1)
-    }
+    let snapshot = fetchOrDie()
     print(formatFull(reason: "forced", snapshot: snapshot))
     writeCache(snapshot: snapshot)
     exit(0)
@@ -44,33 +54,24 @@ if forceMode {
 let reason = determineReason()
 
 if reason != "cache_valid" {
-    let (snapshot, failCount) = fetchAllData()
-    if failCount >= 4 {
-        fputs("Error: multiple data sources failed. Check glab authentication (glab auth status).\n", stderr)
-        exit(1)
-    }
+    let snapshot = fetchOrDie()
     print(formatFull(reason: reason, snapshot: snapshot))
     writeCache(snapshot: snapshot)
     exit(0)
 }
 
 let cache = readCache()!
-let (freshSnapshot, failCount) = fetchAllData()
+let snapshot = fetchOrDie()
 
-if failCount >= 4 {
-    fputs("Error: multiple data sources failed. Check glab authentication (glab auth status).\n", stderr)
-    exit(1)
-}
-
-let diff = computeDiff(cached: cache.snapshot, fresh: freshSnapshot)
+let diff = computeDiff(cached: cache.snapshot, fresh: snapshot)
 let ageMinutes = cacheAgeMinutes(cache)
 
 if diff.hasPriorityLabelChange {
-    print(formatFull(reason: "priority_labels_changed", snapshot: freshSnapshot))
-    writeCache(snapshot: freshSnapshot)
+    print(formatFull(reason: "priority_labels_changed", snapshot: snapshot))
+    writeCache(snapshot: snapshot)
 } else if diff.isEmpty {
     print(formatNoChanges(ageMinutes: ageMinutes, report: cache.report, recommendation: cache.recommendation))
 } else {
     print(formatDelta(ageMinutes: ageMinutes, diff: diff, report: cache.report, recommendation: cache.recommendation))
-    writeCache(snapshot: freshSnapshot)
+    writeCache(snapshot: snapshot)
 }
