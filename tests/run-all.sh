@@ -13,7 +13,7 @@ MOCK_DIR="$SCRIPT_DIR/mocks"
 FIXTURE_DIR="$SCRIPT_DIR/fixtures"
 
 RESULT_DIR="$(mktemp -d)"
-TOTAL=15
+TOTAL=16
 
 # Colors
 GREEN='\033[0;32m'
@@ -522,6 +522,50 @@ CACHE
   cache_version=$(python3 -c "import json; print(json.load(open('$TEST_CACHE_DIR/last-run.json'))['version'])" 2>/dev/null)
   if [[ "$cache_version" != "2" ]]; then
     fail "cache should be rewritten as version 2, got ${cache_version:-parse_error}"
+    ok=false
+  fi
+
+  $ok && pass
+)
+teardown_test
+
+# ── Test 16: ANALYSIS section with PRD hierarchy ────────────────────────────
+
+setup_test "16. FULL output contains ---ANALYSIS--- with prd_hierarchy"
+(
+  export MOCK_FIXTURE_SET="analysis-hierarchy"
+
+  stdout=$("$BINARY" 2>/dev/null)
+  exit_code=$?
+  ok=true
+
+  assert_exit_code "$exit_code" "0" || ok=false
+  assert_stdout_contains "$stdout" "MODE: FULL" || ok=false
+  assert_stdout_contains "$stdout" "---ANALYSIS---" || ok=false
+  assert_stdout_contains "$stdout" "---END_ANALYSIS---" || ok=false
+  assert_stdout_contains "$stdout" "---RAW_DATA---" || ok=false
+
+  analysis_json=$(echo "$stdout" | sed -n '/---ANALYSIS---/,/---END_ANALYSIS---/p' | grep -v '^---')
+
+  if ! echo "$analysis_json" | python3 -c "import sys, json; json.load(sys.stdin)" 2>/dev/null; then
+    fail "ANALYSIS section is not valid JSON"
+    ok=false
+  fi
+
+  if ! echo "$analysis_json" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+assert 'prd_hierarchy' in data, 'missing prd_hierarchy key'
+h = data['prd_hierarchy']
+assert len(h) == 1, f'expected 1 PRD, got {len(h)}'
+prd = h[0]
+assert prd['prd_iid'] == 7, f'expected prd_iid 7, got {prd[\"prd_iid\"]}'
+assert len(prd['children']) == 3, f'expected 3 children, got {len(prd[\"children\"])}'
+assert prd['completion']['total'] == 3, f'expected total 3, got {prd[\"completion\"][\"total\"]}'
+assert prd['completion']['closed'] == 2, f'expected closed 2, got {prd[\"completion\"][\"closed\"]}'
+assert prd['completion']['percentage'] == 66, f'expected 66%%, got {prd[\"completion\"][\"percentage\"]}'
+" 2>/dev/null; then
+    fail "ANALYSIS prd_hierarchy content is incorrect"
     ok=false
   fi
 

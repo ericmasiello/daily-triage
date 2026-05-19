@@ -24,6 +24,7 @@ private struct RawMR: Decodable {
 private struct RawIssue: Decodable {
     let iid: Int
     let title: String
+    let state: String?
     let labels: [String]?
     let createdAt: String?
     let webUrl: String?
@@ -56,6 +57,7 @@ private extension Issue {
         self.init(
             iid: raw.iid,
             title: raw.title,
+            state: raw.state,
             labels: raw.labels ?? [],
             createdAt: raw.createdAt,
             webUrl: raw.webUrl
@@ -75,7 +77,7 @@ private func decodeArray<T: Decodable>(_ string: String) -> [T] {
 // MARK: - Public fetch
 
 enum FetchResult {
-    case success(Snapshot)
+    case success(snapshot: Snapshot, issueDescriptions: [Int: String])
     case failure([Error])
 }
 
@@ -88,6 +90,7 @@ func fetchAllData() -> FetchResult {
     var draftMRs:       [MR] = []
     var sandcastleMRs:  [MR] = []
     var issuesList:     [Issue] = []
+    var issueDescriptions: [Int: String] = [:]
     var worktreesList:  [String] = []
     var mergedBranches: [String] = []
     var errors: [Error] = []
@@ -123,9 +126,15 @@ func fetchAllData() -> FetchResult {
         sandcastleMRs = (decodeArray(out) as [RawMR]).map { MR(from: $0) }
     }
 
-    fetch("glab issue list -O json --per-page 100",
+    fetch("glab issue list -O json --per-page 100 --state all",
           source: "issues") { out in
-        issuesList = (decodeArray(out) as [RawIssue]).map { Issue(from: $0) }
+        let rawIssues: [RawIssue] = decodeArray(out)
+        issuesList = rawIssues.map { Issue(from: $0) }
+        for raw in rawIssues {
+            if let desc = raw.description, !desc.isEmpty {
+                issueDescriptions[raw.iid] = desc
+            }
+        }
     }
 
     group.enter()
@@ -177,5 +186,5 @@ func fetchAllData() -> FetchResult {
         mergedBranches: filteredBranches
     )
 
-    return .success(snapshot)
+    return .success(snapshot: snapshot, issueDescriptions: issueDescriptions)
 }
