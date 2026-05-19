@@ -72,3 +72,18 @@ gh issue edit <n> --remove-label "status:<old>" --add-label "status:<new>"
 - `studioDir` defaults to `~/Sites/studio`. If that directory doesn't exist, the binary exits 1. Tests override it via `TRIAGE_STUDIO_DIR`.
 - `triageAuthor` defaults to `ericmasiello` but can be overridden via `TRIAGE_AUTHOR` env var.
 - Cache lives at `~/.cache/eric-triage/last-run.json` with 1-hour TTL. Don't run the binary against real APIs during development — use the test suite.
+
+## Editor / LSP Setup
+
+This project has no SPM `Package.swift` or Xcode project. To get sourcekit-lsp working (cross-file symbol resolution, code completion, diagnostics), the project uses a `compile_commands.json` file that tells the LSP all `Sources/*.swift` files compile as a single module.
+
+```bash
+# Generate (or regenerate) compile_commands.json
+./generate-compile-commands.sh
+```
+
+Re-run this script after adding or removing any `.swift` file in `Sources/`. The generated `compile_commands.json` is gitignored because it contains machine-specific absolute paths.
+
+**After adding a new Swift source file**, you must:
+1. Re-run `./generate-compile-commands.sh`
+2. Restart the editor's LSP server (or reopen the project)
