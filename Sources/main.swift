@@ -1,5 +1,6 @@
 import Foundation
 
+let config = Config.fromEnvironment()
 let args = CommandLine.arguments
 
 if let idx = args.firstIndex(of: "--save-report") {
@@ -7,7 +8,12 @@ if let idx = args.firstIndex(of: "--save-report") {
         fputs("Usage: triage-cache --save-report \"<markdown>\"\n", stderr)
         exit(1)
     }
-    saveReport(args[idx + 1])
+    do {
+        try saveReport(args[idx + 1], config: config)
+    } catch {
+        fputs("Error: \(error)\n", stderr)
+        exit(1)
+    }
     exit(0)
 }
 
@@ -26,13 +32,13 @@ do {
     exit(1)
 }
 
-guard FileManager.default.fileExists(atPath: studioDir) else {
-    fputs("Error: \(studioDir) not found\n", stderr)
+guard FileManager.default.fileExists(atPath: config.studioDir) else {
+    fputs("Error: \(config.studioDir) not found\n", stderr)
     exit(1)
 }
 
 func fetchOrDie() -> (Snapshot, [Int: String], [Issue]) {
-    switch fetchAllData() {
+    switch fetchAllData(config: config) {
     case .success(let snapshot, let issueDescriptions, let allIssues):
         return (snapshot, issueDescriptions, allIssues)
     case .failure(let errors):
@@ -48,21 +54,21 @@ if forceMode {
     let (snapshot, descriptions, allIssues) = fetchOrDie()
     let analysis = computeAnalysis(snapshot: snapshot, issueDescriptions: descriptions, allIssues: allIssues)
     print(formatFull(reason: "forced", snapshot: snapshot, analysis: analysis))
-    writeCache(snapshot: snapshot)
+    writeCache(snapshot: snapshot, config: config)
     exit(0)
 }
 
-let reason = determineReason()
+let reason = determineReason(config: config)
 
 if reason != "cache_valid" {
     let (snapshot, descriptions, allIssues) = fetchOrDie()
     let analysis = computeAnalysis(snapshot: snapshot, issueDescriptions: descriptions, allIssues: allIssues)
     print(formatFull(reason: reason, snapshot: snapshot, analysis: analysis))
-    writeCache(snapshot: snapshot)
+    writeCache(snapshot: snapshot, config: config)
     exit(0)
 }
 
-let cache = readCache()!
+let cache = readCache(config: config)!
 let (snapshot, descriptions, allIssues) = fetchOrDie()
 
 let diff = computeDiff(cached: cache.snapshot, fresh: snapshot)
@@ -71,10 +77,10 @@ let ageMinutes = cacheAgeMinutes(cache)
 if diff.hasPriorityLabelChange {
     let analysis = computeAnalysis(snapshot: snapshot, issueDescriptions: descriptions, allIssues: allIssues)
     print(formatFull(reason: "priority_labels_changed", snapshot: snapshot, analysis: analysis))
-    writeCache(snapshot: snapshot)
+    writeCache(snapshot: snapshot, config: config)
 } else if diff.isEmpty {
     print(formatNoChanges(ageMinutes: ageMinutes, report: cache.report, recommendation: cache.recommendation))
 } else {
     print(formatDelta(ageMinutes: ageMinutes, diff: diff, report: cache.report, recommendation: cache.recommendation))
-    writeCache(snapshot: snapshot)
+    writeCache(snapshot: snapshot, config: config)
 }

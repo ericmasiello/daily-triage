@@ -1,20 +1,6 @@
 import Foundation
 
-let cacheDir: String = {
-    if let dir = ProcessInfo.processInfo.environment["TRIAGE_CACHE_DIR"] {
-        return dir
-    }
-    return (NSHomeDirectory() as NSString).appendingPathComponent(".cache/eric-triage")
-}()
-let cachePath: String = (cacheDir as NSString).appendingPathComponent("last-run.json")
-let studioDir: String = {
-    if let dir = ProcessInfo.processInfo.environment["TRIAGE_STUDIO_DIR"] {
-        return dir
-    }
-    return (NSHomeDirectory() as NSString).appendingPathComponent("Sites/studio")
-}()
-let ttlSeconds: TimeInterval = 3600
-let triageAuthor: String = ProcessInfo.processInfo.environment["TRIAGE_AUTHOR"] ?? "ericmasiello"
+// MARK: - JSON helpers
 
 private func makeDecoder() -> JSONDecoder {
     let d = JSONDecoder()
@@ -29,8 +15,10 @@ private func makeEncoder() -> JSONEncoder {
     return e
 }
 
-func readCache() -> CacheEnvelope? {
-    guard let data = FileManager.default.contents(atPath: cachePath),
+// MARK: - Cache operations
+
+func readCache(config: Config) -> CacheEnvelope? {
+    guard let data = FileManager.default.contents(atPath: config.cachePath),
           let cache = try? makeDecoder().decode(CacheEnvelope.self, from: data),
           cache.version == 2 else {
         return nil
@@ -38,16 +26,16 @@ func readCache() -> CacheEnvelope? {
     return cache
 }
 
-func writeCache(snapshot: Snapshot) {
+func writeCache(snapshot: Snapshot, config: Config) {
     let fm = FileManager.default
-    if !fm.fileExists(atPath: cacheDir) {
-        try? fm.createDirectory(atPath: cacheDir, withIntermediateDirectories: true)
+    if !fm.fileExists(atPath: config.cacheDir) {
+        try? fm.createDirectory(atPath: config.cacheDir, withIntermediateDirectories: true)
     }
 
     let cache = CacheEnvelope(
         version: 2,
         timestamp: ISO8601DateFormatter().string(from: Date()),
-        ttlSeconds: Int(ttlSeconds),
+        ttlSeconds: Int(config.ttlSeconds),
         snapshot: snapshot,
         report: nil,
         recommendation: nil,
@@ -58,17 +46,41 @@ func writeCache(snapshot: Snapshot) {
         fputs("Warning: failed to serialize cache JSON\n", stderr)
         return
     }
-    try? data.write(to: URL(fileURLWithPath: cachePath))
+    do {
+        try data.write(to: URL(fileURLWithPath: config.cachePath))
+    } catch {
+        fputs("Warning: failed to write cache file: \(error.localizedDescription)\n", stderr)
+    }
 }
 
-func saveReport(_ reportText: String) {
-    guard let data = FileManager.default.contents(atPath: cachePath) else {
-        fputs("Error: cache file not found or corrupt at \(cachePath)\nRun triage-cache first.\n", stderr)
-        exit(1)
+// MARK: - Save report
+
+enum SaveReportError: Error, CustomStringConvertible {
+    case cacheNotFound(path: String)
+    case cacheCorrupt(path: String)
+    case serializationFailed
+    case writeFailed(Error)
+
+    var description: String {
+        switch self {
+        case .cacheNotFound(let path):
+            return "cache file not found at \(path) — run triage-cache first"
+        case .cacheCorrupt(let path):
+            return "cache file corrupt at \(path) — run triage-cache first"
+        case .serializationFailed:
+            return "failed to serialize updated cache"
+        case .writeFailed(let error):
+            return "failed to write cache file: \(error.localizedDescription)"
+        }
+    }
+}
+
+func saveReport(_ reportText: String, config: Config) throws {
+    guard let data = FileManager.default.contents(atPath: config.cachePath) else {
+        throw SaveReportError.cacheNotFound(path: config.cachePath)
     }
     guard var cache = try? makeDecoder().decode(CacheEnvelope.self, from: data) else {
-        fputs("Error: cache file not found or corrupt at \(cachePath)\nRun triage-cache first.\n", stderr)
-        exit(1)
+        throw SaveReportError.cacheCorrupt(path: config.cachePath)
     }
 
     var recommendation: String? = nil
@@ -84,16 +96,16 @@ func saveReport(_ reportText: String) {
     cache.recommendation = recommendation
 
     guard let updated = try? makeEncoder().encode(cache) else {
-        fputs("Error: failed to serialize updated cache\n", stderr)
-        exit(1)
+        throw SaveReportError.serializationFailed
     }
     do {
-        try updated.write(to: URL(fileURLWithPath: cachePath))
+        try updated.write(to: URL(fileURLWithPath: config.cachePath))
     } catch {
-        fputs("Error: failed to write cache file: \(error.localizedDescription)\n", stderr)
-        exit(1)
+        throw SaveReportError.writeFailed(error)
     }
 }
+
+// MARK: - Cache metadata
 
 func cacheAgeMinutes(_ cache: CacheEnvelope) -> Int {
     guard let date = ISO8601DateFormatter().date(from: cache.timestamp) else {
@@ -102,16 +114,16 @@ func cacheAgeMinutes(_ cache: CacheEnvelope) -> Int {
     return Int(Date().timeIntervalSince(date) / 60)
 }
 
-func determineReason() -> String {
-    guard FileManager.default.fileExists(atPath: cachePath) else {
+func determineReason(config: Config) -> String {
+    guard FileManager.default.fileExists(atPath: config.cachePath) else {
         return "first_run"
     }
-    guard let cache = readCache() else {
-        try? FileManager.default.removeItem(atPath: cachePath)
+    guard let cache = readCache(config: config) else {
+        try? FileManager.default.removeItem(atPath: config.cachePath)
         return "cache_corrupt"
     }
     if let date = ISO8601DateFormatter().date(from: cache.timestamp),
-       Date().timeIntervalSince(date) > ttlSeconds {
+       Date().timeIntervalSince(date) > config.ttlSeconds {
         return "cache_expired"
     }
     return "cache_valid"

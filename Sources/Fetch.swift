@@ -81,7 +81,7 @@ enum FetchResult {
     case failure([Error])
 }
 
-func fetchAllData() -> FetchResult {
+func fetchAllData(config: Config, runShell: @escaping ShellRunner = shell) -> FetchResult {
     let group = DispatchGroup()
     let fetchQueue = DispatchQueue(label: "com.triage.fetch", attributes: .concurrent)
     let resultQueue = DispatchQueue(label: "com.triage.results")
@@ -100,7 +100,7 @@ func fetchAllData() -> FetchResult {
         group.enter()
         fetchQueue.async {
             do {
-                let out = try shell(command, workingDirectory: studioDir)
+                let out = try runShell(command, config.studioDir)
                 resultQueue.sync { transform(out) }
             } catch {
                 resultQueue.sync {
@@ -112,17 +112,17 @@ func fetchAllData() -> FetchResult {
         }
     }
 
-    fetch("glab mr list --author=\(triageAuthor) --not-draft -F json --per-page 50",
+    fetch("glab mr list --author=\(config.triageAuthor) --not-draft -F json --per-page 50",
           source: "non-draft MRs") { out in
         nonDraftMRs = (decodeArray(out) as [RawMR]).map { MR(from: $0) }
     }
 
-    fetch("glab mr list --author=\(triageAuthor) --draft -F json --per-page 50",
+    fetch("glab mr list --author=\(config.triageAuthor) --draft -F json --per-page 50",
           source: "draft MRs") { out in
         draftMRs = (decodeArray(out) as [RawMR]).map { MR(from: $0) }
     }
 
-    fetch("glab mr list --author=\(triageAuthor) -F json --per-page 50 --repo ericmasiello/sandcastle-studio",
+    fetch("glab mr list --author=\(config.triageAuthor) -F json --per-page 50 --repo ericmasiello/sandcastle-studio",
           source: "sandcastle MRs") { out in
         sandcastleMRs = (decodeArray(out) as [RawMR]).map { MR(from: $0) }
     }
@@ -139,23 +139,25 @@ func fetchAllData() -> FetchResult {
         }
     }
 
+    // Non-fatal: worktree listing — empty result is fine if .worktrees doesn't exist
     group.enter()
     fetchQueue.async {
-        let worktreePath = (studioDir as NSString).appendingPathComponent(".worktrees")
-        let out = (try? shell("ls '\(worktreePath)' 2>/dev/null")) ?? ""
+        let worktreePath = (config.studioDir as NSString).appendingPathComponent(".worktrees")
+        let out = (try? runShell("ls '\(worktreePath)' 2>/dev/null", nil)) ?? ""
         let dirs = out.components(separatedBy: "\n").filter { !$0.isEmpty }
         resultQueue.sync { worktreesList = dirs }
         group.leave()
     }
 
+    // Non-fatal: merged branch detection — falls back to empty list
     group.enter()
     fetchQueue.async {
-        let rawDefault = (try? shell(
-            "git -C '\(studioDir)' symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@'")) ?? ""
+        let rawDefault = (try? runShell(
+            "git -C '\(config.studioDir)' symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@'", nil)) ?? ""
         let defaultBranch = rawDefault.trimmingCharacters(in: .whitespacesAndNewlines)
         let branch = defaultBranch.isEmpty ? "master" : defaultBranch
 
-        let branchOut = (try? shell("git -C '\(studioDir)' branch -r --merged '\(branch)' 2>/dev/null")) ?? ""
+        let branchOut = (try? runShell("git -C '\(config.studioDir)' branch -r --merged '\(branch)' 2>/dev/null", nil)) ?? ""
         let branches = branchOut
             .components(separatedBy: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
