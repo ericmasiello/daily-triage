@@ -1,30 +1,47 @@
 import Foundation
 
-/// Extract the fields needed for triage from MR JSON objects.
-func extractMRFields(_ mrs: [[String: Any]]) -> [[String: Any]] {
-    mrs.map { mr in
-        var result: [String: Any] = [:]
-        for key in ["iid", "title", "draft", "source_branch", "created_at", "updated_at",
-                     "web_url", "labels", "detailed_merge_status", "user_notes_count", "has_conflicts"] {
-            if let val = mr[key] { result[key] = val }
-        }
-        // Flatten reviewers to username strings
-        if let reviewers = mr["reviewers"] as? [[String: Any]] {
-            result["reviewer_usernames"] = reviewers.compactMap { $0["username"] as? String }
-        }
-        return result
-    }
+/// A merge request with the fields relevant for triage.
+struct MR: Codable, Equatable {
+    let iid: Int
+    let title: String
+    let draft: Bool?
+    let sourceBranch: String?
+    let createdAt: String?
+    let updatedAt: String?
+    let webUrl: String?
+    let labels: [String]
+    let detailedMergeStatus: String?
+    let userNotesCount: Int?
+    let hasConflicts: Bool?
+    let reviewerUsernames: [String]?
 }
 
-/// Extract issue fields, truncating descriptions to 500 chars.
-func extractIssueFields(_ issues: [[String: Any]]) -> [[String: Any]] {
-    issues.map { issue in
-        var result: [String: Any] = [:]
-        for key in ["iid", "title", "labels", "created_at", "web_url"] {
-            if let val = issue[key] { result[key] = val }
-        }
-        let desc = (issue["description"] as? String) ?? ""
-        result["description"] = String(desc.prefix(500))
-        return result
-    }
+/// An issue with the fields relevant for triage.
+struct Issue: Codable, Equatable {
+    let iid: Int
+    let title: String
+    let labels: [String]
+    let createdAt: String?
+    let webUrl: String?
+    let description: String?
+}
+
+/// A complete snapshot of all triage data sources.
+struct Snapshot: Codable {
+    let nonDraftMrs: [MR]
+    let draftMrs: [MR]
+    let sandcastleMrs: [MR]
+    let issues: [Issue]
+    let worktrees: [String]
+    let mergedBranches: [String]
+}
+
+/// The on-disk cache envelope (v1 schema).
+struct CacheEnvelope: Codable {
+    let version: Int
+    let timestamp: String
+    let ttlSeconds: Int
+    let snapshot: Snapshot
+    var report: String?
+    var recommendation: String?
 }

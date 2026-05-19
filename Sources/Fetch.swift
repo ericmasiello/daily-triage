@@ -1,84 +1,130 @@
 import Foundation
 
-/// Fetch all 6 data sources in parallel. Returns the snapshot dictionary and a count of failures.
-func fetchAllData() -> (snapshot: [String: Any], failCount: Int) {
+// MARK: - Raw glab JSON shapes (file-private)
+
+private struct RawMR: Decodable {
+    let iid: Int
+    let title: String
+    let draft: Bool?
+    let sourceBranch: String?
+    let createdAt: String?
+    let updatedAt: String?
+    let webUrl: String?
+    let labels: [String]?
+    let detailedMergeStatus: String?
+    let userNotesCount: Int?
+    let hasConflicts: Bool?
+    let reviewers: [Reviewer]?
+
+    struct Reviewer: Decodable {
+        let username: String
+    }
+}
+
+private struct RawIssue: Decodable {
+    let iid: Int
+    let title: String
+    let labels: [String]?
+    let createdAt: String?
+    let webUrl: String?
+    let description: String?
+}
+
+// MARK: - Raw → Typed mapping (file-private)
+
+private extension MR {
+    init(from raw: RawMR) {
+        self.init(
+            iid: raw.iid,
+            title: raw.title,
+            draft: raw.draft,
+            sourceBranch: raw.sourceBranch,
+            createdAt: raw.createdAt,
+            updatedAt: raw.updatedAt,
+            webUrl: raw.webUrl,
+            labels: raw.labels ?? [],
+            detailedMergeStatus: raw.detailedMergeStatus,
+            userNotesCount: raw.userNotesCount,
+            hasConflicts: raw.hasConflicts,
+            reviewerUsernames: raw.reviewers?.map { $0.username }
+        )
+    }
+}
+
+private extension Issue {
+    init(from raw: RawIssue) {
+        self.init(
+            iid: raw.iid,
+            title: raw.title,
+            labels: raw.labels ?? [],
+            createdAt: raw.createdAt,
+            webUrl: raw.webUrl,
+            description: raw.description.map { String($0.prefix(500)) }
+        )
+    }
+}
+
+// MARK: - JSON decoding helper
+
+private func decodeArray<T: Decodable>(_ string: String) -> [T] {
+    guard !string.isEmpty, let data = string.data(using: .utf8) else { return [] }
+    let decoder = JSONDecoder()
+    decoder.keyDecodingStrategy = .convertFromSnakeCase
+    return (try? decoder.decode([T].self, from: data)) ?? []
+}
+
+// MARK: - Public fetch
+
+func fetchAllData() -> (snapshot: Snapshot, failCount: Int) {
     let group = DispatchGroup()
     let fetchQueue = DispatchQueue(label: "com.triage.fetch", attributes: .concurrent)
     let resultQueue = DispatchQueue(label: "com.triage.results")
 
-    var nonDraftMRs:    [[String: Any]] = []
-    var draftMRs:       [[String: Any]] = []
-    var sandcastleMRs:  [[String: Any]] = []
-    var issuesList:     [[String: Any]] = []
+    var nonDraftMRs:    [MR] = []
+    var draftMRs:       [MR] = []
+    var sandcastleMRs:  [MR] = []
+    var issuesList:     [Issue] = []
     var worktreesList:  [String] = []
     var mergedBranches: [String] = []
     var failCount = 0
 
-    // 1. Non-draft MRs
-    group.enter()
-    fetchQueue.async {
-        let (out, code) = shell(
-            "glab mr list --author=ericmasiello --not-draft -F json --per-page 50",
-            workingDirectory: studioDir)
-        if code == 0 {
-            let extracted = extractMRFields(parseJSONArray(out))
-            resultQueue.sync { nonDraftMRs = extracted }
-        } else {
-            resultQueue.sync { failCount += 1 }
-            fputs("Warning: failed to fetch non-draft MRs\n", stderr)
+    func fetch(_ command: String, warning: String, transform: @escaping (String) -> Void) {
+        group.enter()
+        fetchQueue.async {
+            let (out, code) = shell(command, workingDirectory: studioDir)
+            resultQueue.sync {
+                if code == 0 {
+                    transform(out)
+                } else {
+                    failCount += 1
+                    fputs("Warning: \(warning)\n", stderr)
+                }
+            }
+            group.leave()
         }
-        group.leave()
     }
 
-    // 2. Draft MRs
-    group.enter()
-    fetchQueue.async {
-        let (out, code) = shell(
-            "glab mr list --author=ericmasiello --draft -F json --per-page 50",
-            workingDirectory: studioDir)
-        if code == 0 {
-            let extracted = extractMRFields(parseJSONArray(out))
-            resultQueue.sync { draftMRs = extracted }
-        } else {
-            resultQueue.sync { failCount += 1 }
-            fputs("Warning: failed to fetch draft MRs\n", stderr)
-        }
-        group.leave()
+    fetch("glab mr list --author=\(triageAuthor) --not-draft -F json --per-page 50",
+          warning: "failed to fetch non-draft MRs") { out in
+        nonDraftMRs = (decodeArray(out) as [RawMR]).map { MR(from: $0) }
     }
 
-    // 3. Sandcastle MRs
-    group.enter()
-    fetchQueue.async {
-        let (out, code) = shell(
-            "glab mr list --author=ericmasiello -F json --per-page 50 --repo ericmasiello/sandcastle-studio",
-            workingDirectory: studioDir)
-        if code == 0 {
-            let extracted = extractMRFields(parseJSONArray(out))
-            resultQueue.sync { sandcastleMRs = extracted }
-        } else {
-            resultQueue.sync { failCount += 1 }
-            fputs("Warning: failed to fetch sandcastle MRs\n", stderr)
-        }
-        group.leave()
+    fetch("glab mr list --author=\(triageAuthor) --draft -F json --per-page 50",
+          warning: "failed to fetch draft MRs") { out in
+        draftMRs = (decodeArray(out) as [RawMR]).map { MR(from: $0) }
     }
 
-    // 4. Issues (descriptions truncated to 500 chars)
-    group.enter()
-    fetchQueue.async {
-        let (out, code) = shell(
-            "glab issue list -O json --per-page 100",
-            workingDirectory: studioDir)
-        if code == 0 {
-            let extracted = extractIssueFields(parseJSONArray(out))
-            resultQueue.sync { issuesList = extracted }
-        } else {
-            resultQueue.sync { failCount += 1 }
-            fputs("Warning: failed to fetch issues\n", stderr)
-        }
-        group.leave()
+    fetch("glab mr list --author=\(triageAuthor) -F json --per-page 50 --repo ericmasiello/sandcastle-studio",
+          warning: "failed to fetch sandcastle MRs") { out in
+        sandcastleMRs = (decodeArray(out) as [RawMR]).map { MR(from: $0) }
     }
 
-    // 5. Worktree listing
+    fetch("glab issue list -O json --per-page 100",
+          warning: "failed to fetch issues") { out in
+        issuesList = (decodeArray(out) as [RawIssue]).map { Issue(from: $0) }
+    }
+
+    // Worktrees — directory listing, no JSON
     group.enter()
     fetchQueue.async {
         let worktreePath = (studioDir as NSString).appendingPathComponent(".worktrees")
@@ -88,7 +134,7 @@ func fetchAllData() -> (snapshot: [String: Any], failCount: Int) {
         group.leave()
     }
 
-    // 6. Merged branches
+    // Merged branches — git output parsing, no JSON
     group.enter()
     fetchQueue.async {
         let (rawDefault, _) = shell(
@@ -107,14 +153,14 @@ func fetchAllData() -> (snapshot: [String: Any], failCount: Int) {
 
     group.wait()
 
-    let snapshot: [String: Any] = [
-        "non_draft_mrs":   nonDraftMRs,
-        "draft_mrs":       draftMRs,
-        "sandcastle_mrs":  sandcastleMRs,
-        "issues":          issuesList,
-        "worktrees":       worktreesList,
-        "merged_branches": mergedBranches
-    ]
+    let snapshot = Snapshot(
+        nonDraftMrs: nonDraftMRs,
+        draftMrs: draftMRs,
+        sandcastleMrs: sandcastleMRs,
+        issues: issuesList,
+        worktrees: worktreesList,
+        mergedBranches: mergedBranches
+    )
 
     return (snapshot, failCount)
 }
