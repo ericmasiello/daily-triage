@@ -75,7 +75,12 @@ private func decodeArray<T: Decodable>(_ string: String) -> [T] {
 
 // MARK: - Public fetch
 
-func fetchAllData() -> (snapshot: Snapshot, failCount: Int) {
+enum FetchResult {
+    case success(Snapshot)
+    case failure([Error])
+}
+
+func fetchAllData() -> FetchResult {
     let group = DispatchGroup()
     let fetchQueue = DispatchQueue(label: "com.triage.fetch", attributes: .concurrent)
     let resultQueue = DispatchQueue(label: "com.triage.results")
@@ -86,18 +91,18 @@ func fetchAllData() -> (snapshot: Snapshot, failCount: Int) {
     var issuesList:     [Issue] = []
     var worktreesList:  [String] = []
     var mergedBranches: [String] = []
-    var failCount = 0
+    var errors: [Error] = []
 
-    func fetch(_ command: String, warning: String, transform: @escaping (String) -> Void) {
+    func fetch(_ command: String, source: String, transform: @escaping (String) -> Void) {
         group.enter()
         fetchQueue.async {
-            let (out, code) = shell(command, workingDirectory: studioDir)
-            resultQueue.sync {
-                if code == 0 {
-                    transform(out)
-                } else {
-                    failCount += 1
-                    fputs("Warning: \(warning)\n", stderr)
+            do {
+                let out = try shell(command, workingDirectory: studioDir)
+                resultQueue.sync { transform(out) }
+            } catch {
+                resultQueue.sync {
+                    errors.append(error)
+                    fputs("Warning: failed to fetch \(source) — \(error)\n", stderr)
                 }
             }
             group.leave()
@@ -105,44 +110,42 @@ func fetchAllData() -> (snapshot: Snapshot, failCount: Int) {
     }
 
     fetch("glab mr list --author=\(triageAuthor) --not-draft -F json --per-page 50",
-          warning: "failed to fetch non-draft MRs") { out in
+          source: "non-draft MRs") { out in
         nonDraftMRs = (decodeArray(out) as [RawMR]).map { MR(from: $0) }
     }
 
     fetch("glab mr list --author=\(triageAuthor) --draft -F json --per-page 50",
-          warning: "failed to fetch draft MRs") { out in
+          source: "draft MRs") { out in
         draftMRs = (decodeArray(out) as [RawMR]).map { MR(from: $0) }
     }
 
     fetch("glab mr list --author=\(triageAuthor) -F json --per-page 50 --repo ericmasiello/sandcastle-studio",
-          warning: "failed to fetch sandcastle MRs") { out in
+          source: "sandcastle MRs") { out in
         sandcastleMRs = (decodeArray(out) as [RawMR]).map { MR(from: $0) }
     }
 
     fetch("glab issue list -O json --per-page 100",
-          warning: "failed to fetch issues") { out in
+          source: "issues") { out in
         issuesList = (decodeArray(out) as [RawIssue]).map { Issue(from: $0) }
     }
 
-    // Worktrees — directory listing, no JSON
     group.enter()
     fetchQueue.async {
         let worktreePath = (studioDir as NSString).appendingPathComponent(".worktrees")
-        let (out, _) = shell("ls '\(worktreePath)' 2>/dev/null")
+        let out = (try? shell("ls '\(worktreePath)' 2>/dev/null")) ?? ""
         let dirs = out.components(separatedBy: "\n").filter { !$0.isEmpty }
         resultQueue.sync { worktreesList = dirs }
         group.leave()
     }
 
-    // Merged branches — git output parsing, no JSON
     group.enter()
     fetchQueue.async {
-        let (rawDefault, _) = shell(
-            "git -C '\(studioDir)' symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@'")
+        let rawDefault = (try? shell(
+            "git -C '\(studioDir)' symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@'")) ?? ""
         let defaultBranch = rawDefault.trimmingCharacters(in: .whitespacesAndNewlines)
         let branch = defaultBranch.isEmpty ? "master" : defaultBranch
 
-        let (branchOut, _) = shell("git -C '\(studioDir)' branch -r --merged '\(branch)' 2>/dev/null")
+        let branchOut = (try? shell("git -C '\(studioDir)' branch -r --merged '\(branch)' 2>/dev/null")) ?? ""
         let branches = branchOut
             .components(separatedBy: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -153,6 +156,10 @@ func fetchAllData() -> (snapshot: Snapshot, failCount: Int) {
 
     group.wait()
 
+    if errors.count >= 4 {
+        return .failure(errors)
+    }
+
     let snapshot = Snapshot(
         nonDraftMrs: nonDraftMRs,
         draftMrs: draftMRs,
@@ -162,5 +169,5 @@ func fetchAllData() -> (snapshot: Snapshot, failCount: Int) {
         mergedBranches: mergedBranches
     )
 
-    return (snapshot, failCount)
+    return .success(snapshot)
 }

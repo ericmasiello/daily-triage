@@ -13,7 +13,7 @@ MOCK_DIR="$SCRIPT_DIR/mocks"
 FIXTURE_DIR="$SCRIPT_DIR/fixtures"
 
 RESULT_DIR="$(mktemp -d)"
-TOTAL=10
+TOTAL=11
 
 # Colors
 GREEN='\033[0;32m'
@@ -374,6 +374,39 @@ setup_test "10. glab not found → exit 1 + stderr error"
   # stderr should have error message
   if ! echo "$stderr_content" | grep -qi "glab"; then
     fail "stderr should mention glab"
+    ok=false
+  fi
+
+  $ok && pass
+)
+teardown_test
+
+# ── Test 11: glab auth expired → exit 1, actionable error ───────────────────
+
+setup_test "11. glab auth expired → exit 1 + actionable error"
+(
+  export MOCK_GLAB_AUTH_FAIL=1
+
+  exit_code=0
+  stdout=$("$BINARY" 2>/tmp/test11_stderr) || exit_code=$?
+  stderr_content=$(cat /tmp/test11_stderr)
+  rm -f /tmp/test11_stderr
+  ok=true
+
+  assert_exit_code "$exit_code" "1" || ok=false
+
+  if [[ -n "$stdout" ]]; then
+    fail "stdout should be empty when auth expired"
+    ok=false
+  fi
+
+  if ! echo "$stderr_content" | grep -q "glab auth login"; then
+    fail "stderr should tell user to run 'glab auth login'"
+    ok=false
+  fi
+
+  if ! echo "$stderr_content" | grep -q "token has expired"; then
+    fail "stderr should surface the actual glab error detail"
     ok=false
   fi
 
