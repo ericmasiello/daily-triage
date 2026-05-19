@@ -1,0 +1,12 @@
+  origin/feature-alpha
+  origin/feature-beta
+  origin/feature-gamma
+  origin/feature-delta
+  origin/feature-epsilon
+  origin/feature-zeta
+  origin/feature-eta
+  origin/feature-theta
+  origin/feature-iota
+  origin/feature-kappa
+  origin/worktree-one
+  origin/worktree-two

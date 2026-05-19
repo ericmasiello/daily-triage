@@ -23,7 +23,6 @@ struct Issue: Codable, Equatable {
     let labels: [String]
     let createdAt: String?
     let webUrl: String?
-    let description: String?
 }
 
 /// A complete snapshot of all triage data sources.
@@ -36,7 +35,7 @@ struct Snapshot: Codable {
     let mergedBranches: [String]
 }
 
-/// The on-disk cache envelope (v1 schema).
+/// The on-disk cache envelope (v2 schema).
 struct CacheEnvelope: Codable {
     let version: Int
     let timestamp: String
@@ -44,4 +43,5 @@ struct CacheEnvelope: Codable {
     let snapshot: Snapshot
     var report: String?
     var recommendation: String?
+    var todoist: String?
 }

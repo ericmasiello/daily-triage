@@ -2,14 +2,20 @@
 # Mock git for integration tests.
 # Returns fixture data for the commands triage-cache uses.
 
+FIXTURE_DIR="${MOCK_FIXTURE_DIR:-}"
+FIXTURE_SET="${MOCK_FIXTURE_SET:-default}"
+
 args="$*"
 
 if [[ "$args" == *"symbolic-ref"* ]]; then
   echo "refs/remotes/origin/master"
 elif [[ "$args" == *"branch -r --merged"* ]]; then
-  echo "  origin/feature-done-1"
-  echo "  origin/feature-done-2"
+  if [[ -n "$FIXTURE_DIR" && -f "$FIXTURE_DIR/${FIXTURE_SET}/merged_branches.txt" ]]; then
+    cat "$FIXTURE_DIR/${FIXTURE_SET}/merged_branches.txt"
+  else
+    echo "  origin/feature-done-1"
+    echo "  origin/feature-done-2"
+  fi
 else
-  # Fall through to real git for any other command
   /usr/bin/git "$@"
 fi

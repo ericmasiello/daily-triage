@@ -58,8 +58,7 @@ private extension Issue {
             title: raw.title,
             labels: raw.labels ?? [],
             createdAt: raw.createdAt,
-            webUrl: raw.webUrl,
-            description: raw.description.map { String($0.prefix(500)) }
+            webUrl: raw.webUrl
         )
     }
 }
@@ -160,13 +159,22 @@ func fetchAllData() -> FetchResult {
         return .failure(errors)
     }
 
+    let worktreeSet = Set(worktreesList)
+    let filteredBranches = mergedBranches.filter { branch in
+        let name = branch
+            .split(separator: "/", maxSplits: 1)
+            .last
+            .map(String.init) ?? branch
+        return worktreeSet.contains(name)
+    }
+
     let snapshot = Snapshot(
         nonDraftMrs: nonDraftMRs,
         draftMrs: draftMRs,
         sandcastleMrs: sandcastleMRs,
         issues: issuesList,
         worktrees: worktreesList,
-        mergedBranches: mergedBranches
+        mergedBranches: filteredBranches
     )
 
     return .success(snapshot)
