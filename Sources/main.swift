@@ -11,9 +11,16 @@ if let idx = args.firstIndex(of: "--save-report") {
     exit(0)
 }
 
-let (_, glabExit) = shell("which glab")
+let (_, _, glabExit) = shell("which glab")
 if glabExit != 0 {
     fputs("Error: glab CLI not found. Install: brew install glab\n", stderr)
+    exit(1)
+}
+let (_, authErr, authExit) = shell("glab auth status")
+if authExit != 0 {
+    let detail = authErr.trimmingCharacters(in: .whitespacesAndNewlines)
+    fputs("Error: glab authentication expired or invalid. Run: glab auth login\n", stderr)
+    if !detail.isEmpty { fputs("  \(detail)\n", stderr) }
     exit(1)
 }
 guard FileManager.default.fileExists(atPath: studioDir) else {

@@ -91,13 +91,18 @@ func fetchAllData() -> (snapshot: Snapshot, failCount: Int) {
     func fetch(_ command: String, warning: String, transform: @escaping (String) -> Void) {
         group.enter()
         fetchQueue.async {
-            let (out, code) = shell(command, workingDirectory: studioDir)
+            let (out, err, code) = shell(command, workingDirectory: studioDir)
             resultQueue.sync {
                 if code == 0 {
                     transform(out)
                 } else {
                     failCount += 1
-                    fputs("Warning: \(warning)\n", stderr)
+                    let detail = err.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if detail.isEmpty {
+                        fputs("Warning: \(warning) (exit code \(code))\n", stderr)
+                    } else {
+                        fputs("Warning: \(warning) — \(detail)\n", stderr)
+                    }
                 }
             }
             group.leave()
@@ -128,7 +133,7 @@ func fetchAllData() -> (snapshot: Snapshot, failCount: Int) {
     group.enter()
     fetchQueue.async {
         let worktreePath = (studioDir as NSString).appendingPathComponent(".worktrees")
-        let (out, _) = shell("ls '\(worktreePath)' 2>/dev/null")
+        let (out, _, _) = shell("ls '\(worktreePath)' 2>/dev/null")
         let dirs = out.components(separatedBy: "\n").filter { !$0.isEmpty }
         resultQueue.sync { worktreesList = dirs }
         group.leave()
@@ -137,12 +142,12 @@ func fetchAllData() -> (snapshot: Snapshot, failCount: Int) {
     // Merged branches — git output parsing, no JSON
     group.enter()
     fetchQueue.async {
-        let (rawDefault, _) = shell(
+        let (rawDefault, _, _) = shell(
             "git -C '\(studioDir)' symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@'")
         let defaultBranch = rawDefault.trimmingCharacters(in: .whitespacesAndNewlines)
         let branch = defaultBranch.isEmpty ? "master" : defaultBranch
 
-        let (branchOut, _) = shell("git -C '\(studioDir)' branch -r --merged '\(branch)' 2>/dev/null")
+        let (branchOut, _, _) = shell("git -C '\(studioDir)' branch -r --merged '\(branch)' 2>/dev/null")
         let branches = branchOut
             .components(separatedBy: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
