@@ -26,9 +26,9 @@ struct AnalysisResult: Codable {
 
 // MARK: - Analysis Engine
 
-func computeAnalysis(snapshot: Snapshot, issueDescriptions: [Int: String]) -> AnalysisResult {
+func computeAnalysis(snapshot: Snapshot, issueDescriptions: [Int: String], allIssues: [Issue]) -> AnalysisResult {
     let issuesByIID = Dictionary(
-        snapshot.issues.map { ($0.iid, $0) },
+        allIssues.map { ($0.iid, $0) },
         uniquingKeysWith: { _, b in b }
     )
 

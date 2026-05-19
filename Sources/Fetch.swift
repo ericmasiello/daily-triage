@@ -77,7 +77,7 @@ private func decodeArray<T: Decodable>(_ string: String) -> [T] {
 // MARK: - Public fetch
 
 enum FetchResult {
-    case success(snapshot: Snapshot, issueDescriptions: [Int: String])
+    case success(snapshot: Snapshot, issueDescriptions: [Int: String], allIssues: [Issue])
     case failure([Error])
 }
 
@@ -90,6 +90,7 @@ func fetchAllData() -> FetchResult {
     var draftMRs:       [MR] = []
     var sandcastleMRs:  [MR] = []
     var issuesList:     [Issue] = []
+    var allIssuesList:  [Issue] = []
     var issueDescriptions: [Int: String] = [:]
     var worktreesList:  [String] = []
     var mergedBranches: [String] = []
@@ -129,7 +130,8 @@ func fetchAllData() -> FetchResult {
     fetch("glab issue list -O json --per-page 100 --all",
           source: "issues") { out in
         let rawIssues: [RawIssue] = decodeArray(out)
-        issuesList = rawIssues.map { Issue(from: $0) }
+        allIssuesList = rawIssues.map { Issue(from: $0) }
+        issuesList = allIssuesList.filter { ($0.state ?? "opened") == "opened" }
         for raw in rawIssues {
             if let desc = raw.description, !desc.isEmpty {
                 issueDescriptions[raw.iid] = desc
@@ -186,5 +188,5 @@ func fetchAllData() -> FetchResult {
         mergedBranches: filteredBranches
     )
 
-    return .success(snapshot: snapshot, issueDescriptions: issueDescriptions)
+    return .success(snapshot: snapshot, issueDescriptions: issueDescriptions, allIssues: allIssuesList)
 }
