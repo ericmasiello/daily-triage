@@ -20,6 +20,7 @@ struct MR: Codable, Equatable {
 struct Issue: Codable, Equatable {
     let iid: Int
     let title: String
+    let state: String?
     let labels: [String]
     let createdAt: String?
     let webUrl: String?

@@ -31,10 +31,10 @@ guard FileManager.default.fileExists(atPath: studioDir) else {
     exit(1)
 }
 
-func fetchOrDie() -> Snapshot {
+func fetchOrDie() -> (Snapshot, [Int: String], [Issue]) {
     switch fetchAllData() {
-    case .success(let snapshot):
-        return snapshot
+    case .success(let snapshot, let issueDescriptions, let allIssues):
+        return (snapshot, issueDescriptions, allIssues)
     case .failure(let errors):
         fputs("Error: all data sources failed. Check glab authentication (glab auth status).\n", stderr)
         for e in errors { fputs("  - \(e)\n", stderr) }
@@ -45,8 +45,9 @@ func fetchOrDie() -> Snapshot {
 let forceMode = args.contains("--force")
 
 if forceMode {
-    let snapshot = fetchOrDie()
-    print(formatFull(reason: "forced", snapshot: snapshot))
+    let (snapshot, descriptions, allIssues) = fetchOrDie()
+    let analysis = computeAnalysis(snapshot: snapshot, issueDescriptions: descriptions, allIssues: allIssues)
+    print(formatFull(reason: "forced", snapshot: snapshot, analysis: analysis))
     writeCache(snapshot: snapshot)
     exit(0)
 }
@@ -54,20 +55,22 @@ if forceMode {
 let reason = determineReason()
 
 if reason != "cache_valid" {
-    let snapshot = fetchOrDie()
-    print(formatFull(reason: reason, snapshot: snapshot))
+    let (snapshot, descriptions, allIssues) = fetchOrDie()
+    let analysis = computeAnalysis(snapshot: snapshot, issueDescriptions: descriptions, allIssues: allIssues)
+    print(formatFull(reason: reason, snapshot: snapshot, analysis: analysis))
     writeCache(snapshot: snapshot)
     exit(0)
 }
 
 let cache = readCache()!
-let snapshot = fetchOrDie()
+let (snapshot, descriptions, allIssues) = fetchOrDie()
 
 let diff = computeDiff(cached: cache.snapshot, fresh: snapshot)
 let ageMinutes = cacheAgeMinutes(cache)
 
 if diff.hasPriorityLabelChange {
-    print(formatFull(reason: "priority_labels_changed", snapshot: snapshot))
+    let analysis = computeAnalysis(snapshot: snapshot, issueDescriptions: descriptions, allIssues: allIssues)
+    print(formatFull(reason: "priority_labels_changed", snapshot: snapshot, analysis: analysis))
     writeCache(snapshot: snapshot)
 } else if diff.isEmpty {
     print(formatNoChanges(ageMinutes: ageMinutes, report: cache.report, recommendation: cache.recommendation))

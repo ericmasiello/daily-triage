@@ -24,7 +24,7 @@ The binary is `.gitignore`d. Always rebuild after source changes.
 ./tests/run-all.sh
 ```
 
-Shell-based integration suite (10 tests). The test runner builds the binary first, so you don't need a separate build step. Tests use mock `glab` and `git` scripts in `tests/mocks/` that read fixture JSON from `tests/fixtures/`. Three fixture sets: `default`, `changed-mr`, `priority-changed`.
+Shell-based integration suite (16 tests). The test runner builds the binary first, so you don't need a separate build step. Tests use mock `glab` and `git` scripts in `tests/mocks/` that read fixture JSON from `tests/fixtures/`. Five fixture sets: `default`, `changed-mr`, `priority-changed`, `many-branches`, `analysis-hierarchy`.
 
 **Environment variables for test isolation:**
 - `TRIAGE_CACHE_DIR` — overrides `~/.cache/eric-triage`
@@ -42,9 +42,10 @@ All Swift in `Sources/`. No subdirectories, no modules.
 |---|---|
 | `main.swift` | Entry point, arg parsing, orchestration |
 | `Cache.swift` | Cache read/write, TTL, `determineReason()`, `saveReport()` |
-| `Fetch.swift` | Parallel `glab`/`git` calls via `DispatchGroup`. Private `Raw*` structs decode glab JSON, then map to public `Models` types |
+| `Fetch.swift` | Parallel `glab`/`git` calls via `DispatchGroup`. Private `Raw*` structs decode glab JSON, then map to public `Models` types. Also captures issue descriptions for analysis |
 | `Diff.swift` | Snapshot diffing. Priority label changes (`p::*`) force FULL mode |
-| `Output.swift` | Formats FULL / NO_CHANGES / DELTA text output |
+| `Output.swift` | Formats FULL / NO_CHANGES / DELTA text output. FULL mode includes `---ANALYSIS---` and `---RAW_DATA---` sections |
+| `Analysis.swift` | `computeAnalysis(snapshot:descriptions:)` — parses issue descriptions for PRD parent-child references, builds hierarchy map, computes completion percentages |
 | `Models.swift` | `MR`, `Issue`, `Snapshot`, `CacheEnvelope` — all `Codable` |
 | `Shell.swift` | `shell()` subprocess helper (bash, captures stdout, suppresses stderr) |
 
