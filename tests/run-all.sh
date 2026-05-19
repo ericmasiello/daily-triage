@@ -13,7 +13,7 @@ MOCK_DIR="$SCRIPT_DIR/mocks"
 FIXTURE_DIR="$SCRIPT_DIR/fixtures"
 
 RESULT_DIR="$(mktemp -d)"
-TOTAL=11
+TOTAL=15
 
 # Colors
 GREEN='\033[0;32m'
@@ -225,12 +225,13 @@ setup_test "5. Cache expired (>1h) → FULL + cache_expired"
   old_ts=$(date -u -v-2H +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u -d "2 hours ago" +"%Y-%m-%dT%H:%M:%SZ")
   cat > "$TEST_CACHE_DIR/last-run.json" <<CACHE
 {
-  "version": 1,
+  "version": 2,
   "timestamp": "$old_ts",
   "ttl_seconds": 3600,
   "snapshot": {"non_draft_mrs":[],"draft_mrs":[],"sandcastle_mrs":[],"issues":[],"worktrees":[],"merged_branches":[]},
   "report": null,
-  "recommendation": null
+  "recommendation": null,
+  "todoist": null
 }
 CACHE
 
@@ -407,6 +408,120 @@ setup_test "11. glab auth expired → exit 1 + actionable error"
 
   if ! echo "$stderr_content" | grep -q "token has expired"; then
     fail "stderr should surface the actual glab error detail"
+    ok=false
+  fi
+
+  $ok && pass
+)
+teardown_test
+
+# ── Test 12: RAW_DATA JSON is compact (no newlines/indentation) ─────────────
+
+setup_test "12. RAW_DATA JSON is compact (no newlines between keys)"
+(
+  stdout=$("$BINARY" 2>/dev/null)
+  exit_code=$?
+  ok=true
+
+  assert_exit_code "$exit_code" "0" || ok=false
+
+  raw_data=$(echo "$stdout" | sed -n '/---RAW_DATA---/,/---END_RAW_DATA---/p' | grep -v '^---')
+
+  line_count=$(echo "$raw_data" | wc -l | tr -d ' ')
+  if [[ "$line_count" -ne 1 ]]; then
+    fail "RAW_DATA JSON should be a single line (compact), got $line_count lines"
+    ok=false
+  fi
+
+  $ok && pass
+)
+teardown_test
+
+# ── Test 13: Issue objects have no description field ─────────────────────────
+
+setup_test "13. Issue objects have no description field in RAW_DATA"
+(
+  stdout=$("$BINARY" 2>/dev/null)
+  exit_code=$?
+  ok=true
+
+  assert_exit_code "$exit_code" "0" || ok=false
+
+  raw_data=$(echo "$stdout" | sed -n '/---RAW_DATA---/,/---END_RAW_DATA---/p' | grep -v '^---')
+
+  if echo "$raw_data" | grep -q '"description"'; then
+    fail "RAW_DATA should not contain 'description' field"
+    ok=false
+  fi
+
+  $ok && pass
+)
+teardown_test
+
+# ── Test 14: Merged branches filtered to worktree-matching only ──────────────
+
+setup_test "14. Merged branches filtered to worktree matches only"
+(
+  export MOCK_FIXTURE_SET="many-branches"
+  mkdir -p "$TEST_STUDIO_DIR/.worktrees/worktree-one"
+  mkdir -p "$TEST_STUDIO_DIR/.worktrees/worktree-two"
+
+  stdout=$("$BINARY" 2>/dev/null)
+  exit_code=$?
+  ok=true
+
+  assert_exit_code "$exit_code" "0" || ok=false
+
+  raw_data=$(echo "$stdout" | sed -n '/---RAW_DATA---/,/---END_RAW_DATA---/p' | grep -v '^---')
+
+  branch_count=$(echo "$raw_data" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d['merged_branches']))" 2>/dev/null)
+  if [[ "$branch_count" != "2" ]]; then
+    fail "expected 2 filtered branches, got ${branch_count:-parse_error}"
+    ok=false
+  fi
+
+  if ! echo "$raw_data" | grep -q "worktree-one"; then
+    fail "filtered branches should include worktree-one"
+    ok=false
+  fi
+  if ! echo "$raw_data" | grep -q "worktree-two"; then
+    fail "filtered branches should include worktree-two"
+    ok=false
+  fi
+
+  $ok && pass
+)
+teardown_test
+
+# ── Test 15: v1 cache triggers cache_corrupt and fresh FULL run ──────────────
+
+setup_test "15. v1 cache → cache_corrupt (v2 auto-invalidation)"
+(
+  cat > "$TEST_CACHE_DIR/last-run.json" <<CACHE
+{
+  "version": 1,
+  "timestamp": "2026-05-12T10:00:00Z",
+  "ttl_seconds": 3600,
+  "snapshot": {"non_draft_mrs":[],"draft_mrs":[],"sandcastle_mrs":[],"issues":[],"worktrees":[],"merged_branches":[]},
+  "report": null,
+  "recommendation": null
+}
+CACHE
+
+  stdout=$("$BINARY" 2>/dev/null)
+  exit_code=$?
+  ok=true
+
+  assert_exit_code "$exit_code" "0" || ok=false
+  assert_stdout_contains "$stdout" "MODE: FULL" || ok=false
+  assert_stdout_contains "$stdout" "REASON: cache_corrupt" || ok=false
+
+  assert_file_exists "$TEST_CACHE_DIR/last-run.json" || ok=false
+  assert_valid_json "$TEST_CACHE_DIR/last-run.json" || ok=false
+
+  cache_version=$(python3 -c "import json; print(json.load(open('$TEST_CACHE_DIR/last-run.json'))['version'])" 2>/dev/null)
+  if [[ "$cache_version" != "2" ]]; then
+    fail "cache should be rewritten as version 2, got ${cache_version:-parse_error}"
     ok=false
   fi
 

@@ -8,7 +8,7 @@ func formatFull(reason: String, snapshot: Snapshot) -> String {
     lines.append("---RAW_DATA---")
 
     let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    encoder.outputFormatting = [.sortedKeys]
     encoder.keyEncodingStrategy = .convertToSnakeCase
     if let jsonData = try? encoder.encode(snapshot),
        let jsonString = String(data: jsonData, encoding: .utf8) {
