@@ -13,14 +13,6 @@ Execute a complete unit of work in the triage-cache Swift binary: plan it, build
 
 Read any referenced plan, PRD, or issue. Explore the relevant source files in `Sources/` to understand existing patterns and conventions.
 
-Key files:
-- `Sources/main.swift` -- entry point, arg parsing
-- `Sources/Shell.swift` -- subprocess execution
-- `Sources/JSON.swift` -- JSON array parsing
-- `Sources/Models.swift` -- MR and issue field extraction
-- `Sources/Cache.swift` -- cache read/write/reason logic
-- `Sources/Fetch.swift` -- parallel data fetching (DispatchGroup)
-
 If the task is ambiguous, ask the user to clarify scope before proceeding.
 
 ### 2. Plan the implementation
@@ -39,11 +31,33 @@ Since this project has no test framework, validate behavior by:
 
 ### 4. Validate
 
+#### 4a. Build
+
 Build the binary and fix any issues. Repeat until the build succeeds.
 
 ```bash
 swiftc Sources/*.swift -o triage-cache
 ```
+
+#### 4b. Regenerate LSP metadata (if files were added or removed)
+
+If you **added or removed** any `.swift` file in `Sources/` during this task, regenerate the compile commands so sourcekit-lsp can resolve cross-file symbols:
+
+```bash
+./generate-compile-commands.sh
+```
+
+Skip this step if you only modified existing files.
+
+#### 4c. Run the test suite
+
+```bash
+./tests/run-all.sh
+```
+
+Shell-based integration suite. Fix any failures your changes introduced. Pre-existing failures unrelated to your changes should be noted but not fixed.
+
+#### 4d. Smoke test (if runtime behavior changed)
 
 If the change affects runtime behavior, run a smoke test:
 
@@ -55,4 +69,4 @@ Verify the output format matches expectations from the README (MODE line, REASON
 
 ### 5. Commit
 
-Once the build passes and behavior is verified, commit the work.
+Once the build passes, tests pass, and behavior is verified, commit the work.

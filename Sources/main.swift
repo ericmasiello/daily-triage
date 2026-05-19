@@ -29,7 +29,7 @@ if forceMode {
         fputs("Error: multiple data sources failed. Check glab authentication (glab auth status).\n", stderr)
         exit(1)
     }
-    outputFull(reason: "forced", snapshot: snapshot)
+    print(formatFull(reason: "forced", snapshot: snapshot))
     writeCache(snapshot: snapshot)
     exit(0)
 }
@@ -42,13 +42,12 @@ if reason != "cache_valid" {
         fputs("Error: multiple data sources failed. Check glab authentication (glab auth status).\n", stderr)
         exit(1)
     }
-    outputFull(reason: reason, snapshot: snapshot)
+    print(formatFull(reason: reason, snapshot: snapshot))
     writeCache(snapshot: snapshot)
     exit(0)
 }
 
 let cache = readCache()!
-let cachedSnapshot = cache["snapshot"] as? [String: Any] ?? [:]
 let (freshSnapshot, failCount) = fetchAllData()
 
 if failCount >= 4 {
@@ -56,60 +55,15 @@ if failCount >= 4 {
     exit(1)
 }
 
-let diff = computeDiff(cached: cachedSnapshot, fresh: freshSnapshot)
+let diff = computeDiff(cached: cache.snapshot, fresh: freshSnapshot)
 let ageMinutes = cacheAgeMinutes(cache)
-let previousReport = cache["report"] as? String
-let previousRecommendation = cache["recommendation"] as? String
 
 if diff.hasPriorityLabelChange {
-    outputFull(reason: "priority_labels_changed", snapshot: freshSnapshot)
+    print(formatFull(reason: "priority_labels_changed", snapshot: freshSnapshot))
     writeCache(snapshot: freshSnapshot)
 } else if diff.isEmpty {
-    outputNoChanges(ageMinutes: ageMinutes, report: previousReport, recommendation: previousRecommendation)
+    print(formatNoChanges(ageMinutes: ageMinutes, report: cache.report, recommendation: cache.recommendation))
 } else {
-    outputDelta(ageMinutes: ageMinutes, diff: diff, report: previousReport, recommendation: previousRecommendation)
+    print(formatDelta(ageMinutes: ageMinutes, diff: diff, report: cache.report, recommendation: cache.recommendation))
     writeCache(snapshot: freshSnapshot)
-}
-
-// MARK: - Output Formatters
-
-func outputFull(reason: String, snapshot: [String: Any]) {
-    print("MODE: FULL")
-    print("REASON: \(reason)")
-    print("")
-    print("---RAW_DATA---")
-    if let jsonData = try? JSONSerialization.data(withJSONObject: snapshot, options: [.prettyPrinted, .sortedKeys]),
-       let jsonString = String(data: jsonData, encoding: .utf8) {
-        print(jsonString)
-    }
-    print("---END_RAW_DATA---")
-}
-
-func outputNoChanges(ageMinutes: Int, report: String?, recommendation: String?) {
-    print("MODE: NO_CHANGES")
-    print("CACHE_AGE_MINUTES: \(ageMinutes)")
-    print("")
-    print("---PREVIOUS_REPORT---")
-    print(report ?? "(no report cached)")
-    print("---END_PREVIOUS_REPORT---")
-    print("")
-    print("PREVIOUS_RECOMMENDATION: \(recommendation ?? "(none)")")
-}
-
-func outputDelta(ageMinutes: Int, diff: DiffResult, report: String?, recommendation: String?) {
-    print("MODE: DELTA")
-    print("CACHE_AGE_MINUTES: \(ageMinutes)")
-    print("CHANGES_SUMMARY: \(diff.summary)")
-    print("")
-    print("---CHANGES---")
-    for change in diff.changes {
-        print(change)
-    }
-    print("---END_CHANGES---")
-    print("")
-    print("---PREVIOUS_REPORT---")
-    print(report ?? "(no report cached)")
-    print("---END_PREVIOUS_REPORT---")
-    print("")
-    print("PREVIOUS_RECOMMENDATION: \(recommendation ?? "(none)")")
 }

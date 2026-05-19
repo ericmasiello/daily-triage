@@ -14,49 +14,62 @@ let studioDir: String = {
     return (NSHomeDirectory() as NSString).appendingPathComponent("Sites/studio")
 }()
 let ttlSeconds: TimeInterval = 3600
+let triageAuthor: String = ProcessInfo.processInfo.environment["TRIAGE_AUTHOR"] ?? "ericmasiello"
 
-/// Read cache file. Returns nil if missing, unreadable, or wrong schema version.
-func readCache() -> [String: Any]? {
-    guard let data = FileManager.default.contents(atPath: cachePath),
-          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-          json["version"] as? Int == 1 else {
-        return nil
-    }
-    return json
+private func makeDecoder() -> JSONDecoder {
+    let d = JSONDecoder()
+    d.keyDecodingStrategy = .convertFromSnakeCase
+    return d
 }
 
-/// Write a fresh cache file with the v1 schema. Report/recommendation start as null.
-func writeCache(snapshot: [String: Any]) {
+private func makeEncoder() -> JSONEncoder {
+    let e = JSONEncoder()
+    e.outputFormatting = [.prettyPrinted, .sortedKeys]
+    e.keyEncodingStrategy = .convertToSnakeCase
+    return e
+}
+
+func readCache() -> CacheEnvelope? {
+    guard let data = FileManager.default.contents(atPath: cachePath),
+          let cache = try? makeDecoder().decode(CacheEnvelope.self, from: data),
+          cache.version == 1 else {
+        return nil
+    }
+    return cache
+}
+
+func writeCache(snapshot: Snapshot) {
     let fm = FileManager.default
     if !fm.fileExists(atPath: cacheDir) {
         try? fm.createDirectory(atPath: cacheDir, withIntermediateDirectories: true)
     }
 
-    let cache: [String: Any] = [
-        "version": 1,
-        "timestamp": ISO8601DateFormatter().string(from: Date()),
-        "ttl_seconds": Int(ttlSeconds),
-        "snapshot": snapshot,
-        "report": NSNull(),
-        "recommendation": NSNull()
-    ]
+    let cache = CacheEnvelope(
+        version: 1,
+        timestamp: ISO8601DateFormatter().string(from: Date()),
+        ttlSeconds: Int(ttlSeconds),
+        snapshot: snapshot,
+        report: nil,
+        recommendation: nil
+    )
 
-    guard let data = try? JSONSerialization.data(withJSONObject: cache, options: [.prettyPrinted, .sortedKeys]) else {
+    guard let data = try? makeEncoder().encode(cache) else {
         fputs("Warning: failed to serialize cache JSON\n", stderr)
         return
     }
     try? data.write(to: URL(fileURLWithPath: cachePath))
 }
 
-/// Update report and recommendation in an existing cache file.
 func saveReport(_ reportText: String) {
-    guard let data = FileManager.default.contents(atPath: cachePath),
-          var cache = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+    guard let data = FileManager.default.contents(atPath: cachePath) else {
+        fputs("Error: cache file not found or corrupt at \(cachePath)\nRun triage-cache first.\n", stderr)
+        exit(1)
+    }
+    guard var cache = try? makeDecoder().decode(CacheEnvelope.self, from: data) else {
         fputs("Error: cache file not found or corrupt at \(cachePath)\nRun triage-cache first.\n", stderr)
         exit(1)
     }
 
-    // Extract recommendation — last line containing "recommendation:"
     var recommendation: String? = nil
     for line in reportText.components(separatedBy: "\n").reversed() {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -66,10 +79,10 @@ func saveReport(_ reportText: String) {
         }
     }
 
-    cache["report"] = reportText
-    cache["recommendation"] = recommendation as Any? ?? NSNull()
+    cache.report = reportText
+    cache.recommendation = recommendation
 
-    guard let updated = try? JSONSerialization.data(withJSONObject: cache, options: [.prettyPrinted, .sortedKeys]) else {
+    guard let updated = try? makeEncoder().encode(cache) else {
         fputs("Error: failed to serialize updated cache\n", stderr)
         exit(1)
     }
@@ -81,15 +94,13 @@ func saveReport(_ reportText: String) {
     }
 }
 
-func cacheAgeMinutes(_ cache: [String: Any]) -> Int {
-    guard let ts = cache["timestamp"] as? String,
-          let date = ISO8601DateFormatter().date(from: ts) else {
+func cacheAgeMinutes(_ cache: CacheEnvelope) -> Int {
+    guard let date = ISO8601DateFormatter().date(from: cache.timestamp) else {
         return 0
     }
     return Int(Date().timeIntervalSince(date) / 60)
 }
 
-/// Determine why FULL mode is being triggered based on cache state.
 func determineReason() -> String {
     guard FileManager.default.fileExists(atPath: cachePath) else {
         return "first_run"
@@ -98,8 +109,7 @@ func determineReason() -> String {
         try? FileManager.default.removeItem(atPath: cachePath)
         return "cache_corrupt"
     }
-    if let ts = cache["timestamp"] as? String,
-       let date = ISO8601DateFormatter().date(from: ts),
+    if let date = ISO8601DateFormatter().date(from: cache.timestamp),
        Date().timeIntervalSince(date) > ttlSeconds {
         return "cache_expired"
     }
