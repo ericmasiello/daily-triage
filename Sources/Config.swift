@@ -32,4 +32,4 @@ struct Config {
     }
 }
 
-typealias ShellRunner = (_ command: String, _ workingDirectory: String?) throws -> String
+typealias ShellRunner = @Sendable (_ command: String, _ workingDirectory: String?) throws -> String

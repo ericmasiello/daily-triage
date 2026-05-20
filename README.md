@@ -11,7 +11,7 @@ Swift binary that fetches GitLab data for the [`eric:triage`](https://gitlab.com
 ## Build
 
 ```bash
-swiftc Sources/*.swift -o triage-cache
+swiftc -parse-as-library Sources/*.swift -o triage-cache
 ```
 
 Compiles in ~1s. No SPM, no Package.swift, no external dependencies.
@@ -122,20 +122,11 @@ Cache directory and studio directory can be overridden via `TRIAGE_CACHE_DIR` an
 ./tests/run-all.sh
 ```
 
-Shell-based integration suite with 10 test cases. Mock `glab` and `git` scripts in `tests/mocks/` isolate the binary from real API calls. Fixture data lives in `tests/fixtures/`.
+Shell-based integration suite with several test cases. Mock `glab` and `git` scripts in `tests/mocks/` isolate the binary from real API calls. Fixture data lives in `tests/fixtures/`.
 
 ## Source Layout
 
-```
-Sources/
-  main.swift    — Entry point, arg parsing, output formatting
-  Shell.swift   — Subprocess execution
-  JSON.swift    — JSON array parsing
-  Models.swift  — MR and issue field extraction
-  Cache.swift   — Cache read/write/reason logic
-  Fetch.swift   — Parallel data fetching (DispatchGroup)
-  Diff.swift    — Snapshot diffing and change detection
-```
+All source lives in `Sources/` — no subdirectories, no modules.
 
 ## Related Issues
 
