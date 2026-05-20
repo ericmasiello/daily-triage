@@ -118,7 +118,7 @@ assert_valid_json() {
 # ── Build ────────────────────────────────────────────────────────────────────
 
 printf "\n${BOLD}Building triage-cache...${RESET}\n"
-(cd "$REPO_DIR" && swiftc Sources/*.swift -o triage-cache 2>&1)
+(cd "$REPO_DIR" && swiftc -parse-as-library Sources/*.swift -o triage-cache 2>&1)
 printf "${GREEN}Build succeeded.${RESET}\n\n"
 printf "${BOLD}Running %d tests:${RESET}\n\n" "$TOTAL"
 

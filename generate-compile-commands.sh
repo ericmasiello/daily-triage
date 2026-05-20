@@ -56,6 +56,7 @@ for i in "${!swift_files[@]}"; do
     "directory": "$PROJECT_DIR",
     "arguments": [
       "swiftc",
+      "-parse-as-library",
 $args_json
     ],
     "file": "$relative",

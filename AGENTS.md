@@ -8,7 +8,7 @@ Swift CLI binary (`triage-cache`) that fetches GitLab MRs/issues via `glab`, dif
 
 ```bash
 # Build (~1s)
-swiftc Sources/*.swift -o triage-cache
+swiftc -parse-as-library Sources/*.swift -o triage-cache
 
 # Run (requires glab auth + ~/Sites/studio)
 ./triage-cache
@@ -38,23 +38,12 @@ New tests: add a numbered block in `run-all.sh` following the existing pattern. 
 
 All Swift in `Sources/`. No subdirectories, no modules.
 
-| File | Role |
-|---|---|
-| `main.swift` | Entry point, arg parsing, orchestration |
-| `Cache.swift` | Cache read/write, TTL, `determineReason()`, `saveReport()` |
-| `Fetch.swift` | Parallel `glab`/`git` calls via `DispatchGroup`. Private `Raw*` structs decode glab JSON, then map to public `Models` types. Also captures issue descriptions for analysis |
-| `Diff.swift` | Snapshot diffing. Priority label changes (`p::*`) force FULL mode |
-| `Output.swift` | Formats FULL / NO_CHANGES / DELTA text output. FULL mode includes `---ANALYSIS---` and `---RAW_DATA---` sections |
-| `Analysis.swift` | `computeAnalysis(snapshot:descriptions:)` — parses issue descriptions for PRD parent-child references, builds hierarchy map, computes completion percentages |
-| `Models.swift` | `MR`, `Issue`, `Snapshot`, `CacheEnvelope` — all `Codable` |
-| `Shell.swift` | `shell()` subprocess helper (bash, captures stdout, suppresses stderr) |
-
 **Note:** README mentions `JSON.swift` but that file was removed in a refactor. The do-work skill also references it — both are stale. The actual JSON decoding now lives in `Fetch.swift`.
 
 ## Conventions
 
 - **No JSON library** — uses Foundation `Codable` with `convertFromSnakeCase` / `convertToSnakeCase` key strategies throughout
-- **All top-level functions** — no classes or protocols. Free functions with `Snapshot` / `DiffResult` value types
+- **All top-level functions** — free functions with `Snapshot` / `DiffResult` value types. The only struct with behavior is the `@main` entry point in `App.swift`
 - **Errors to stderr** via `fputs(..., stderr)`, structured output to stdout via `print()`
 - **Exit codes**: 0 = success, 1 = missing prereqs or auth failure (4+ data source failures)
 - **File-private raw types** in `Fetch.swift` — glab JSON shapes are `private struct Raw*`, mapped to public models via `private extension`
