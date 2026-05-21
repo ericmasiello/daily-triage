@@ -26,31 +26,6 @@ struct Issue: Codable, Equatable {
     let webUrl: String?
 }
 
-/// A due date on a Todoist task.
-struct TodoistDue: Codable, Equatable {
-    let date: String
-    let isRecurring: Bool
-    let string: String?
-}
-
-/// A Todoist task with the fields relevant for triage.
-struct TodoistTask: Codable, Equatable {
-    let id: String
-    let content: String
-    let priority: Int
-    let due: TodoistDue?
-    let labels: [String]
-    let url: String
-}
-
-/// Todoist tasks grouped by urgency.
-struct TodoistSnapshot: Codable, Equatable {
-    let overdue: [TodoistTask]
-    let today: [TodoistTask]
-    let upNext: [TodoistTask]
-}
-
-/// A complete snapshot of all triage data sources.
 struct Snapshot: Codable {
     var nonDraftMrs: [MR]
     var draftMrs: [MR]
@@ -58,10 +33,9 @@ struct Snapshot: Codable {
     var issues: [Issue]
     var worktrees: [String]
     var mergedBranches: [String]
-    var todoist: TodoistSnapshot?
+    var todoist: TodoistService.State?
     var todoistError: String?
 
-    /// Adapter: read/write the GitLab slice without changing encoded JSON shape.
     var gitlab: GitLabService.State {
         get {
             GitLabService.State(
@@ -83,8 +57,7 @@ struct Snapshot: Codable {
         }
     }
 
-    /// Build a Snapshot from a GitLabService.State plus Todoist fields.
-    init(gitlab: GitLabService.State, todoist: TodoistSnapshot?, todoistError: String?) {
+    init(gitlab: GitLabService.State, todoist: TodoistService.State?, todoistError: String?) {
         self.nonDraftMrs = gitlab.nonDraftMrs
         self.draftMrs = gitlab.draftMrs
         self.sandcastleMrs = gitlab.sandcastleMrs
@@ -95,10 +68,9 @@ struct Snapshot: Codable {
         self.todoistError = todoistError
     }
 
-    /// Memberwise init (preserves existing call sites).
     init(nonDraftMrs: [MR], draftMrs: [MR], sandcastleMrs: [MR], issues: [Issue],
          worktrees: [String], mergedBranches: [String],
-         todoist: TodoistSnapshot? = nil, todoistError: String? = nil) {
+         todoist: TodoistService.State? = nil, todoistError: String? = nil) {
         self.nonDraftMrs = nonDraftMrs
         self.draftMrs = draftMrs
         self.sandcastleMrs = sandcastleMrs
