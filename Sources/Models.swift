@@ -26,6 +26,30 @@ struct Issue: Codable, Equatable {
     let webUrl: String?
 }
 
+/// A due date on a Todoist task.
+struct TodoistDue: Codable, Equatable {
+    let date: String
+    let isRecurring: Bool
+    let string: String?
+}
+
+/// A Todoist task with the fields relevant for triage.
+struct TodoistTask: Codable, Equatable {
+    let id: String
+    let content: String
+    let priority: Int
+    let due: TodoistDue?
+    let labels: [String]
+    let url: String
+}
+
+/// Todoist tasks grouped by urgency.
+struct TodoistSnapshot: Codable, Equatable {
+    let overdue: [TodoistTask]
+    let today: [TodoistTask]
+    let upNext: [TodoistTask]
+}
+
 /// A complete snapshot of all triage data sources.
 struct Snapshot: Codable {
     let nonDraftMrs: [MR]
@@ -34,6 +58,8 @@ struct Snapshot: Codable {
     let issues: [Issue]
     let worktrees: [String]
     let mergedBranches: [String]
+    var todoist: TodoistSnapshot?
+    var todoistError: String?
 }
 
 /// The on-disk cache envelope (v2 schema).
@@ -44,5 +70,4 @@ struct CacheEnvelope: Codable {
     let snapshot: Snapshot
     var report: String?
     var recommendation: String?
-    var todoist: String?
 }

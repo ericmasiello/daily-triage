@@ -1,0 +1,32 @@
+#!/bin/bash
+# Mock td CLI for integration tests.
+# Returns fixture JSON based on MOCK_FIXTURE_DIR and MOCK_FIXTURE_SET env vars.
+
+FIXTURE_DIR="${MOCK_FIXTURE_DIR:?MOCK_FIXTURE_DIR must be set}"
+FIXTURE_SET="${MOCK_FIXTURE_SET:-default}"
+
+if [[ "${MOCK_TD_FAIL}" == "1" ]]; then
+  echo "Error: Todoist authentication failed" >&2
+  exit 1
+fi
+
+args="$*"
+
+if [[ "$args" == *"task list"*"today | overdue"* ]]; then
+  file="$FIXTURE_DIR/${FIXTURE_SET}/todoist_today_overdue.json"
+  if [[ -f "$file" ]]; then
+    cat "$file"
+  else
+    echo '{"results":[],"nextCursor":null}'
+  fi
+elif [[ "$args" == *"task list"*"Up Next"* ]]; then
+  file="$FIXTURE_DIR/${FIXTURE_SET}/todoist_up_next.json"
+  if [[ -f "$file" ]]; then
+    cat "$file"
+  else
+    echo '{"results":[],"nextCursor":null}'
+  fi
+else
+  echo "mock td: unknown command: $args" >&2
+  exit 1
+fi

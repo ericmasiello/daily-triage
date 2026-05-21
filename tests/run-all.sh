@@ -13,7 +13,7 @@ MOCK_DIR="$SCRIPT_DIR/mocks"
 FIXTURE_DIR="$SCRIPT_DIR/fixtures"
 
 RESULT_DIR="$(mktemp -d)"
-TOTAL=16
+TOTAL=20
 
 # Colors
 GREEN='\033[0;32m'
@@ -32,9 +32,11 @@ setup_test() {
 
   export TRIAGE_CACHE_DIR="$TEST_CACHE_DIR"
   export TRIAGE_STUDIO_DIR="$TEST_STUDIO_DIR"
+  export TRIAGE_TODAY="2026-05-21"
   export MOCK_FIXTURE_DIR="$FIXTURE_DIR"
   export MOCK_FIXTURE_SET="default"
   unset MOCK_GLAB_AUTH_FAIL 2>/dev/null || true
+  unset MOCK_TD_FAIL 2>/dev/null || true
   export PATH="$MOCK_DIR:$PATH"
 
   printf "  ${BOLD}Test: %s${RESET} ... " "$test_name"
@@ -568,6 +570,124 @@ assert prd['completion']['percentage'] == 66, f'expected 66%%, got {prd[\"comple
     fail "ANALYSIS prd_hierarchy content is incorrect"
     ok=false
   fi
+
+  $ok && pass
+)
+teardown_test
+
+# ── Test 17: Todoist data in FULL output ────────────────────────────────────
+
+setup_test "17. Todoist tasks appear in FULL output with overdue/today/up_next"
+(
+  stdout=$("$BINARY" 2>/dev/null)
+  exit_code=$?
+  ok=true
+
+  assert_exit_code "$exit_code" "0" || ok=false
+  assert_stdout_contains "$stdout" "MODE: FULL" || ok=false
+
+  raw_data=$(echo "$stdout" | sed -n '/---RAW_DATA---/,/---END_RAW_DATA---/p' | grep -v '^---')
+
+  if ! echo "$raw_data" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+t = data['todoist']
+assert len(t['overdue']) == 1, f'expected 1 overdue, got {len(t[\"overdue\"])}'
+assert len(t['today']) == 1, f'expected 1 today, got {len(t[\"today\"])}'
+assert len(t['up_next']) == 1, f'expected 1 up_next, got {len(t[\"up_next\"])}'
+assert t['overdue'][0]['id'] == 'task-overdue-1', f'wrong overdue task id'
+assert t['today'][0]['id'] == 'task-today-1', f'wrong today task id'
+assert t['up_next'][0]['id'] == 'task-upnext-1', f'wrong up_next task id'
+" 2>/dev/null; then
+    fail "Todoist data incorrect in RAW_DATA"
+    ok=false
+  fi
+
+  $ok && pass
+)
+teardown_test
+
+# ── Test 18: td failure → graceful degradation ──────────────────────────────
+
+setup_test "18. td failure → todoist_error in output, exit 0"
+(
+  export MOCK_TD_FAIL=1
+
+  stdout=$("$BINARY" 2>/dev/null)
+  exit_code=$?
+  ok=true
+
+  assert_exit_code "$exit_code" "0" || ok=false
+  assert_stdout_contains "$stdout" "MODE: FULL" || ok=false
+
+  raw_data=$(echo "$stdout" | sed -n '/---RAW_DATA---/,/---END_RAW_DATA---/p' | grep -v '^---')
+
+  if ! echo "$raw_data" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+assert data.get('todoist_error') is not None, 'todoist_error should be set'
+assert data.get('todoist') is None, 'todoist should be null when td fails'
+" 2>/dev/null; then
+    fail "Graceful degradation incorrect"
+    ok=false
+  fi
+
+  $ok && pass
+)
+teardown_test
+
+# ── Test 19: Todoist cached on NO_CHANGES (td fails on second run) ──────────
+
+setup_test "19. Todoist cached on NO_CHANGES (td fails second run)"
+(
+  # First run: td succeeds, Todoist data cached
+  "$BINARY" >/dev/null 2>&1
+
+  # Second run: td fails, but cache has Todoist data
+  export MOCK_TD_FAIL=1
+  stdout=$("$BINARY" 2>/dev/null)
+  exit_code=$?
+  ok=true
+
+  assert_exit_code "$exit_code" "0" || ok=false
+  assert_stdout_contains "$stdout" "MODE: NO_CHANGES" || ok=false
+
+  # Verify cache still has Todoist data
+  if ! python3 -c "
+import json
+data = json.load(open('$TEST_CACHE_DIR/last-run.json'))
+t = data['snapshot']['todoist']
+assert t is not None, 'cached todoist should not be null'
+assert len(t['overdue']) == 1, 'cached overdue should have 1 task'
+assert len(t['today']) == 1, 'cached today should have 1 task'
+assert len(t['up_next']) == 1, 'cached up_next should have 1 task'
+" 2>/dev/null; then
+    fail "Todoist data not properly cached"
+    ok=false
+  fi
+
+  $ok && pass
+)
+teardown_test
+
+# ── Test 20: DELTA detects Todoist changes ───────────────────────────────────
+
+setup_test "20. DELTA detects Todoist task changes"
+(
+  # First run with default Todoist fixtures
+  "$BINARY" >/dev/null 2>&1
+
+  # Second run with changed Todoist data (task-overdue-1 removed, task-today-new added)
+  export MOCK_FIXTURE_SET="changed-todoist"
+  stdout=$("$BINARY" 2>/dev/null)
+  exit_code=$?
+  ok=true
+
+  assert_exit_code "$exit_code" "0" || ok=false
+  assert_stdout_contains "$stdout" "MODE: DELTA" || ok=false
+  assert_stdout_contains "$stdout" "---CHANGES---" || ok=false
+  assert_stdout_contains "$stdout" "Todoist: added (Deploy hotfix)" || ok=false
+  assert_stdout_contains "$stdout" "Todoist: removed (Update documentation)" || ok=false
 
   $ok && pass
 )

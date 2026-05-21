@@ -74,18 +74,20 @@ struct TriageCache {
         let cache = readCache(config: config)!
         let (snapshot, descriptions, allIssues) = await fetchOrDie()
 
-        let diff = computeDiff(cached: cache.snapshot, fresh: snapshot)
+        let effectiveSnapshot = reconcileSnapshot(cached: cache.snapshot, fresh: snapshot)
+
+        let diff = computeDiff(cached: cache.snapshot, fresh: effectiveSnapshot)
         let ageMinutes = cacheAgeMinutes(cache)
 
         if diff.hasPriorityLabelChange {
-            let analysis = computeAnalysis(snapshot: snapshot, issueDescriptions: descriptions, allIssues: allIssues)
-            print(formatFull(reason: "priority_labels_changed", snapshot: snapshot, analysis: analysis))
-            writeCache(snapshot: snapshot, config: config)
+            let analysis = computeAnalysis(snapshot: effectiveSnapshot, issueDescriptions: descriptions, allIssues: allIssues)
+            print(formatFull(reason: "priority_labels_changed", snapshot: effectiveSnapshot, analysis: analysis))
+            writeCache(snapshot: effectiveSnapshot, config: config)
         } else if diff.isEmpty {
             print(formatNoChanges(ageMinutes: ageMinutes, report: cache.report, recommendation: cache.recommendation))
         } else {
             print(formatDelta(ageMinutes: ageMinutes, diff: diff, report: cache.report, recommendation: cache.recommendation))
-            writeCache(snapshot: snapshot, config: config)
+            writeCache(snapshot: effectiveSnapshot, config: config)
         }
     }
 }
