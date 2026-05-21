@@ -52,14 +52,62 @@ struct TodoistSnapshot: Codable, Equatable {
 
 /// A complete snapshot of all triage data sources.
 struct Snapshot: Codable {
-    let nonDraftMrs: [MR]
-    let draftMrs: [MR]
-    let sandcastleMrs: [MR]
-    let issues: [Issue]
-    let worktrees: [String]
-    let mergedBranches: [String]
+    var nonDraftMrs: [MR]
+    var draftMrs: [MR]
+    var sandcastleMrs: [MR]
+    var issues: [Issue]
+    var worktrees: [String]
+    var mergedBranches: [String]
     var todoist: TodoistSnapshot?
     var todoistError: String?
+
+    /// Adapter: read/write the GitLab slice without changing encoded JSON shape.
+    var gitlab: GitLabService.State {
+        get {
+            GitLabService.State(
+                nonDraftMrs: nonDraftMrs,
+                draftMrs: draftMrs,
+                sandcastleMrs: sandcastleMrs,
+                issues: issues,
+                worktrees: worktrees,
+                mergedBranches: mergedBranches
+            )
+        }
+        set {
+            nonDraftMrs = newValue.nonDraftMrs
+            draftMrs = newValue.draftMrs
+            sandcastleMrs = newValue.sandcastleMrs
+            issues = newValue.issues
+            worktrees = newValue.worktrees
+            mergedBranches = newValue.mergedBranches
+        }
+    }
+
+    /// Build a Snapshot from a GitLabService.State plus Todoist fields.
+    init(gitlab: GitLabService.State, todoist: TodoistSnapshot?, todoistError: String?) {
+        self.nonDraftMrs = gitlab.nonDraftMrs
+        self.draftMrs = gitlab.draftMrs
+        self.sandcastleMrs = gitlab.sandcastleMrs
+        self.issues = gitlab.issues
+        self.worktrees = gitlab.worktrees
+        self.mergedBranches = gitlab.mergedBranches
+        self.todoist = todoist
+        self.todoistError = todoistError
+    }
+
+    /// Memberwise init (preserves existing call sites).
+    init(nonDraftMrs: [MR], draftMrs: [MR], sandcastleMrs: [MR], issues: [Issue],
+         worktrees: [String], mergedBranches: [String],
+         todoist: TodoistSnapshot? = nil, todoistError: String? = nil) {
+        self.nonDraftMrs = nonDraftMrs
+        self.draftMrs = draftMrs
+        self.sandcastleMrs = sandcastleMrs
+        self.issues = issues
+        self.worktrees = worktrees
+        self.mergedBranches = mergedBranches
+        self.todoist = todoist
+        self.todoistError = todoistError
+    }
 }
 
 /// The on-disk cache envelope (v2 schema).

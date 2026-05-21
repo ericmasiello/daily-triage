@@ -21,7 +21,7 @@ protocol DataSourceService {
     var label: String { get }
     var failurePolicy: FailurePolicy { get }
 
-    func fetch(config: Config, shell: ShellRunner) async throws
+    mutating func fetch(config: Config, shell: @escaping ShellRunner) async throws
     func diff(cached: Snapshot, fresh: Snapshot) -> (changes: [String], signals: [DiffSignal])
     func format(_ snapshot: Snapshot) -> [String]
 }

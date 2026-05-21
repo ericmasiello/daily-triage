@@ -40,23 +40,40 @@ struct TriageCache {
             exit(1)
         }
 
-        func fetchOrDie() async -> (Snapshot, [Int: String], [Issue]) {
-            switch await fetchAllData(config: config) {
-            case .success(let snapshot, let issueDescriptions, let allIssues):
-                return (snapshot, issueDescriptions, allIssues)
-            case .failure(let errors):
+        let runShell: ShellRunner = { command, dir in try shell(command, workingDirectory: dir) }
+
+        func fetchOrDie() async -> (GitLabService, TodoistFetchResult) {
+            var service = GitLabService()
+            do {
+                try await service.fetch(config: config, shell: runShell)
+            } catch {
                 fputs("Error: all data sources failed. Check glab authentication (glab auth status).\n", stderr)
-                for e in errors { fputs("  - \(e)\n", stderr) }
+                if case GitLabFetchError.tooManyFailures(let errors) = error {
+                    for e in errors { fputs("  - \(e)\n", stderr) }
+                } else {
+                    fputs("  - \(error)\n", stderr)
+                }
                 exit(1)
             }
+            let todoistResult = await fetchTodoistData(config: config, shell: runShell)
+            return (service, todoistResult)
+        }
+
+        func buildSnapshot(service: GitLabService, todoist: TodoistFetchResult) -> Snapshot {
+            guard let state = service.fetchedState else {
+                fputs("Error: GitLab fetch did not produce a state\n", stderr)
+                exit(1)
+            }
+            return Snapshot(gitlab: state, todoist: todoist.snapshot, todoistError: todoist.error)
         }
 
         let forceMode = args.contains("--force")
 
         if forceMode {
-            let (snapshot, descriptions, allIssues) = await fetchOrDie()
-            let analysis = computeAnalysis(snapshot: snapshot, issueDescriptions: descriptions, allIssues: allIssues)
-            print(formatFull(reason: "forced", snapshot: snapshot, analysis: analysis))
+            let (service, todoistResult) = await fetchOrDie()
+            let snapshot = buildSnapshot(service: service, todoist: todoistResult)
+            let analysisLines = service.format(snapshot)
+            print(formatFull(reason: "forced", snapshot: snapshot, analysisLines: analysisLines))
             writeCache(snapshot: snapshot, config: config)
             exit(0)
         }
@@ -64,24 +81,32 @@ struct TriageCache {
         let reason = determineReason(config: config)
 
         if reason != "cache_valid" {
-            let (snapshot, descriptions, allIssues) = await fetchOrDie()
-            let analysis = computeAnalysis(snapshot: snapshot, issueDescriptions: descriptions, allIssues: allIssues)
-            print(formatFull(reason: reason, snapshot: snapshot, analysis: analysis))
+            let (service, todoistResult) = await fetchOrDie()
+            let snapshot = buildSnapshot(service: service, todoist: todoistResult)
+            let analysisLines = service.format(snapshot)
+            print(formatFull(reason: reason, snapshot: snapshot, analysisLines: analysisLines))
             writeCache(snapshot: snapshot, config: config)
             exit(0)
         }
 
         let cache = readCache(config: config)!
-        let (snapshot, descriptions, allIssues) = await fetchOrDie()
+        let (service, todoistResult) = await fetchOrDie()
+        let snapshot = buildSnapshot(service: service, todoist: todoistResult)
 
         let effectiveSnapshot = reconcileSnapshot(cached: cache.snapshot, fresh: snapshot)
 
-        let diff = computeDiff(cached: cache.snapshot, fresh: effectiveSnapshot)
+        let (gitlabChanges, gitlabSignals) = service.diff(cached: cache.snapshot, fresh: effectiveSnapshot)
+        let todoistChanges = diffTodoist(cached: cache.snapshot.todoist, fresh: effectiveSnapshot.todoist)
+
+        var diff = DiffResult()
+        diff.changes = gitlabChanges + todoistChanges
+        diff.signals = gitlabSignals
+
         let ageMinutes = cacheAgeMinutes(cache)
 
-        if diff.hasPriorityLabelChange {
-            let analysis = computeAnalysis(snapshot: effectiveSnapshot, issueDescriptions: descriptions, allIssues: allIssues)
-            print(formatFull(reason: "priority_labels_changed", snapshot: effectiveSnapshot, analysis: analysis))
+        if diff.signals.contains(.priorityChange) {
+            let analysisLines = service.format(effectiveSnapshot)
+            print(formatFull(reason: "priority_labels_changed", snapshot: effectiveSnapshot, analysisLines: analysisLines))
             writeCache(snapshot: effectiveSnapshot, config: config)
         } else if diff.isEmpty {
             print(formatNoChanges(ageMinutes: ageMinutes, report: cache.report, recommendation: cache.recommendation))
