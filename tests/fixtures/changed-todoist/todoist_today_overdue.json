@@ -1,0 +1,51 @@
+{
+  "results": [
+    {
+      "id": "task-today-1",
+      "content": "Review PR feedback",
+      "description": "",
+      "priority": 4,
+      "due": {
+        "isRecurring": false,
+        "string": "today",
+        "date": "2026-05-21",
+        "timezone": null,
+        "lang": "en"
+      },
+      "deadline": null,
+      "duration": null,
+      "projectId": "proj-work",
+      "sectionId": null,
+      "parentId": null,
+      "labels": ["work"],
+      "url": "https://app.todoist.com/app/task/task-today-1",
+      "responsibleUid": null,
+      "responsibleName": null,
+      "isUncompletable": false
+    },
+    {
+      "id": "task-today-new",
+      "content": "Deploy hotfix",
+      "description": "",
+      "priority": 4,
+      "due": {
+        "isRecurring": false,
+        "string": "today",
+        "date": "2026-05-21",
+        "timezone": null,
+        "lang": "en"
+      },
+      "deadline": null,
+      "duration": null,
+      "projectId": "proj-work",
+      "sectionId": null,
+      "parentId": null,
+      "labels": [],
+      "url": "https://app.todoist.com/app/task/task-today-new",
+      "responsibleUid": null,
+      "responsibleName": null,
+      "isUncompletable": false
+    }
+  ],
+  "nextCursor": null
+}

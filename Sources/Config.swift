@@ -6,6 +6,7 @@ struct Config {
     let studioDir: String
     let ttlSeconds: TimeInterval
     let triageAuthor: String
+    let todayDate: String
 
     static func fromEnvironment() -> Config {
         let cacheDir: String = {
@@ -22,12 +23,23 @@ struct Config {
             return (NSHomeDirectory() as NSString).appendingPathComponent("Sites/studio")
         }()
 
+        let todayDate: String = {
+            if let d = ProcessInfo.processInfo.environment["TRIAGE_TODAY"] {
+                return d
+            }
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            formatter.timeZone = TimeZone.current
+            return formatter.string(from: Date())
+        }()
+
         return Config(
             cacheDir: cacheDir,
             cachePath: (cacheDir as NSString).appendingPathComponent("last-run.json"),
             studioDir: studioDir,
             ttlSeconds: 3600,
-            triageAuthor: ProcessInfo.processInfo.environment["TRIAGE_AUTHOR"] ?? "ericmasiello"
+            triageAuthor: ProcessInfo.processInfo.environment["TRIAGE_AUTHOR"] ?? "ericmasiello",
+            todayDate: todayDate
         )
     }
 }

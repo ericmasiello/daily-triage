@@ -1,0 +1,51 @@
+{
+  "results": [
+    {
+      "id": "task-today-1",
+      "content": "Review PR feedback",
+      "description": "",
+      "priority": 4,
+      "due": {
+        "isRecurring": false,
+        "string": "today",
+        "date": "2026-05-21",
+        "timezone": null,
+        "lang": "en"
+      },
+      "deadline": null,
+      "duration": null,
+      "projectId": "proj-work",
+      "sectionId": null,
+      "parentId": null,
+      "labels": ["work"],
+      "url": "https://app.todoist.com/app/task/task-today-1",
+      "responsibleUid": null,
+      "responsibleName": null,
+      "isUncompletable": false
+    },
+    {
+      "id": "task-overdue-1",
+      "content": "Update documentation",
+      "description": "",
+      "priority": 1,
+      "due": {
+        "isRecurring": false,
+        "string": "May 20",
+        "date": "2026-05-20",
+        "timezone": null,
+        "lang": "en"
+      },
+      "deadline": null,
+      "duration": null,
+      "projectId": "proj-work",
+      "sectionId": null,
+      "parentId": null,
+      "labels": [],
+      "url": "https://app.todoist.com/app/task/task-overdue-1",
+      "responsibleUid": null,
+      "responsibleName": null,
+      "isUncompletable": false
+    }
+  ],
+  "nextCursor": null
+}

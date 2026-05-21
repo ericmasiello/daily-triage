@@ -1,0 +1,22 @@
+{
+  "results": [
+    {
+      "id": "task-upnext-1",
+      "content": "Plan sprint retro",
+      "description": "",
+      "priority": 2,
+      "due": null,
+      "deadline": null,
+      "duration": null,
+      "projectId": "proj-work",
+      "sectionId": null,
+      "parentId": null,
+      "labels": ["Up Next"],
+      "url": "https://app.todoist.com/app/task/task-upnext-1",
+      "responsibleUid": null,
+      "responsibleName": null,
+      "isUncompletable": false
+    }
+  ],
+  "nextCursor": null
+}

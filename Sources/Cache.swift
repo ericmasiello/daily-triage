@@ -38,8 +38,7 @@ func writeCache(snapshot: Snapshot, config: Config) {
         ttlSeconds: Int(config.ttlSeconds),
         snapshot: snapshot,
         report: nil,
-        recommendation: nil,
-        todoist: nil
+        recommendation: nil
     )
 
     guard let data = try? makeEncoder().encode(cache) else {

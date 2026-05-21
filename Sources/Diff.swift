@@ -23,6 +23,7 @@ func computeDiff(cached: Snapshot, fresh: Snapshot) -> DiffResult {
     diffIssues(&result, cached: cached.issues, fresh: fresh.issues)
     diffStringSet(&result, label: "Worktree", cached: cached.worktrees, fresh: fresh.worktrees)
     diffStringSet(&result, label: "Merged branch", cached: cached.mergedBranches, fresh: fresh.mergedBranches)
+    diffTodoist(&result, cached: cached.todoist, fresh: fresh.todoist)
 
     return result
 }
@@ -138,4 +139,50 @@ private func diffStringSet(_ result: inout DiffResult, label: String,
 private func describeOptional<T>(_ value: T?) -> String {
     guard let value = value else { return "null" }
     return "\(value)"
+}
+
+// MARK: - Todoist Diffing
+
+private func diffTodoist(_ result: inout DiffResult, cached: TodoistSnapshot?, fresh: TodoistSnapshot?) {
+    if cached == nil && fresh == nil { return }
+
+    let cachedTasks = flattenTodoist(cached)
+    let freshTasks = flattenTodoist(fresh)
+
+    let cachedIDs = Set(cachedTasks.keys)
+    let freshIDs = Set(freshTasks.keys)
+
+    for id in freshIDs.subtracting(cachedIDs).sorted() {
+        let (_, task) = freshTasks[id]!
+        result.changes.append("Todoist: added (\(task.content))")
+    }
+
+    for id in cachedIDs.subtracting(freshIDs).sorted() {
+        let (_, task) = cachedTasks[id]!
+        result.changes.append("Todoist: removed (\(task.content))")
+    }
+
+    for id in cachedIDs.intersection(freshIDs).sorted() {
+        let (oldCat, oldTask) = cachedTasks[id]!
+        let (newCat, newTask) = freshTasks[id]!
+
+        if oldTask.content != newTask.content {
+            result.changes.append("Todoist \(id): content changed \"\(oldTask.content)\" → \"\(newTask.content)\"")
+        }
+        if oldTask.priority != newTask.priority {
+            result.changes.append("Todoist \(id): priority changed \(oldTask.priority) → \(newTask.priority)")
+        }
+        if oldCat != newCat {
+            result.changes.append("Todoist \(id): moved \(oldCat) → \(newCat)")
+        }
+    }
+}
+
+private func flattenTodoist(_ snapshot: TodoistSnapshot?) -> [String: (String, TodoistTask)] {
+    guard let s = snapshot else { return [:] }
+    var result: [String: (String, TodoistTask)] = [:]
+    for task in s.overdue { result[task.id] = ("overdue", task) }
+    for task in s.today { result[task.id] = ("today", task) }
+    for task in s.upNext { result[task.id] = ("up_next", task) }
+    return result
 }
