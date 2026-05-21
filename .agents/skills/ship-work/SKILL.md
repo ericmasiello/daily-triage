@@ -1,11 +1,11 @@
 ---
 name: project:ship-work
-description: "Commit, push, and optionally create a GitHub pull request, then update the source issue's status labels. Use when the user says 'ship this', 'commit and push', 'push it up', 'create PR', 'create pull request', or wants to go from reviewed code to a pushed branch with issue tracking updated."
+description: "Commit, push, and create a GitHub pull request, then update the source issue's status labels. Use when the user says 'ship this', 'commit and push', 'push it up', 'create PR', 'create pull request', or wants to go from reviewed code to a pushed branch with issue tracking updated."
 ---
 
 # Ship Work
 
-Commit, push, optionally open a GitHub PR, and update the source issue's status labels.
+Commit, push, open a GitHub PR, and update the source issue's status labels.
 
 ## Workflow
 
@@ -62,11 +62,7 @@ gh pr view 2>&1
 
 #### 5a. No existing PR
 
-Ask the user: **"Create a pull request for this branch?"**
-
-Do NOT assume — wait for explicit confirmation.
-
-If **yes**, create the PR. List every issue it closes in the body:
+Create the PR. List every issue it closes in the body:
 
 ```bash
 gh pr create --title "type(scope): description" \
@@ -80,8 +76,6 @@ gh pr create --title "type(scope): description" \
 Closes #<number1>
 Closes #<number2>"
 ```
-
-If **no**, skip to step 6.
 
 #### 5b. Existing PR — update description
 
@@ -99,7 +93,6 @@ Update **every** issue identified in step 1. Remove the old `status:*` label (no
 | Scenario | New label |
 |----------|-----------|
 | PR created or updated, ready for review | `status:awaiting-review` |
-| Pushed, no PR yet | `status:in-progress` |
 | Work is partial (more slices remain) | `status:in-progress` |
 
 ```bash
