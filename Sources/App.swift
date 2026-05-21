@@ -42,39 +42,23 @@ struct TriageCache {
 
         let runShell: ShellRunner = { command, dir in try shell(command, workingDirectory: dir) }
 
-        func fetchOrDie() async -> (GitLabService, TodoistService) {
-            var gitlabService = GitLabService()
-            do {
-                try await gitlabService.fetch(config: config, shell: runShell)
-            } catch {
-                fputs("Error: all data sources failed. Check glab authentication (glab auth status).\n", stderr)
-                if case GitLabFetchError.tooManyFailures(let errors) = error {
-                    for e in errors { fputs("  - \(e)\n", stderr) }
-                } else {
-                    fputs("  - \(error)\n", stderr)
-                }
-                exit(1)
-            }
-            var todoistService = TodoistService()
-            try? await todoistService.fetch(config: config, shell: runShell)
-            return (gitlabService, todoistService)
-        }
+        async let glResult = fetchGitLabService(config: config, shell: runShell)
+        async let tdResult = fetchTodoistService(config: config, shell: runShell)
 
-        func buildSnapshot(gitlabService: GitLabService, todoistService: TodoistService) -> Snapshot {
-            guard let state = gitlabService.fetchedState else {
-                fputs("Error: GitLab fetch did not produce a state\n", stderr)
-                exit(1)
-            }
-            return Snapshot(gitlab: state, todoist: todoistService.fetchedState, todoistError: todoistService.fetchError)
+        let (gitlabService, gitlabError) = await glResult
+        var todoistService = await tdResult
+
+        if let error = gitlabError, gitlabService.failurePolicy == .fatal {
+            fputs("Error: \(gitlabService.label) service failed — \(error)\n", stderr)
+            exit(1)
         }
 
         let forceMode = args.contains("--force")
 
         if forceMode {
-            let (gitlabService, todoistService) = await fetchOrDie()
-            let snapshot = buildSnapshot(gitlabService: gitlabService, todoistService: todoistService)
-            let analysisLines = gitlabService.format(snapshot)
-            print(formatFull(reason: "forced", snapshot: snapshot, analysisLines: analysisLines))
+            let snapshot = assembleSnapshot(gitlab: gitlabService, todoist: todoistService)
+            let serviceLines = collectServiceLines([gitlabService, todoistService], snapshot: snapshot)
+            print(formatFull(reason: "forced", snapshot: snapshot, serviceLines: serviceLines))
             writeCache(snapshot: snapshot, config: config)
             exit(0)
         }
@@ -82,32 +66,32 @@ struct TriageCache {
         let reason = determineReason(config: config)
 
         if reason != "cache_valid" {
-            let (gitlabService, todoistService) = await fetchOrDie()
-            let snapshot = buildSnapshot(gitlabService: gitlabService, todoistService: todoistService)
-            let analysisLines = gitlabService.format(snapshot)
-            print(formatFull(reason: reason, snapshot: snapshot, analysisLines: analysisLines))
+            let snapshot = assembleSnapshot(gitlab: gitlabService, todoist: todoistService)
+            let serviceLines = collectServiceLines([gitlabService, todoistService], snapshot: snapshot)
+            print(formatFull(reason: reason, snapshot: snapshot, serviceLines: serviceLines))
             writeCache(snapshot: snapshot, config: config)
             exit(0)
         }
 
         let cache = readCache(config: config)!
-        var (gitlabService, todoistService) = await fetchOrDie()
 
         todoistService.reconcileIfNeeded(cached: cache.snapshot)
-        let snapshot = buildSnapshot(gitlabService: gitlabService, todoistService: todoistService)
 
-        let (gitlabChanges, gitlabSignals) = gitlabService.diff(cached: cache.snapshot, fresh: snapshot)
-        let (todoistChanges, _) = todoistService.diff(cached: cache.snapshot, fresh: snapshot)
+        let snapshot = assembleSnapshot(gitlab: gitlabService, todoist: todoistService)
 
+        let services: [any DataSourceService] = [gitlabService, todoistService]
         var diff = DiffResult()
-        diff.changes = gitlabChanges + todoistChanges
-        diff.signals = gitlabSignals
+        for service in services {
+            let (changes, signals) = service.diff(cached: cache.snapshot, fresh: snapshot)
+            diff.changes += changes
+            diff.signals += signals
+        }
 
         let ageMinutes = cacheAgeMinutes(cache)
 
         if diff.signals.contains(.priorityChange) {
-            let analysisLines = gitlabService.format(snapshot)
-            print(formatFull(reason: "priority_labels_changed", snapshot: snapshot, analysisLines: analysisLines))
+            let serviceLines = collectServiceLines(services, snapshot: snapshot)
+            print(formatFull(reason: "priority_labels_changed", snapshot: snapshot, serviceLines: serviceLines))
             writeCache(snapshot: snapshot, config: config)
         } else if diff.isEmpty {
             print(formatNoChanges(ageMinutes: ageMinutes, report: cache.report, recommendation: cache.recommendation))
@@ -116,4 +100,38 @@ struct TriageCache {
             writeCache(snapshot: snapshot, config: config)
         }
     }
+}
+
+// MARK: - Fetch helpers
+
+private func fetchGitLabService(config: Config, shell: @escaping ShellRunner) async -> (GitLabService, Error?) {
+    var service = GitLabService()
+    do {
+        try await service.fetch(config: config, shell: shell)
+        return (service, nil)
+    } catch {
+        return (service, error)
+    }
+}
+
+private func fetchTodoistService(config: Config, shell: @escaping ShellRunner) async -> TodoistService {
+    var service = TodoistService()
+    try? await service.fetch(config: config, shell: shell)
+    return service
+}
+
+// MARK: - Snapshot assembly
+
+private func assembleSnapshot(gitlab: GitLabService, todoist: TodoistService) -> Snapshot {
+    guard let state = gitlab.fetchedState else {
+        fputs("Error: GitLab fetch did not produce a state\n", stderr)
+        exit(1)
+    }
+    return Snapshot(gitlab: state, todoist: todoist.fetchedState, todoistError: todoist.fetchError)
+}
+
+// MARK: - Service output collection
+
+private func collectServiceLines(_ services: [any DataSourceService], snapshot: Snapshot) -> [String] {
+    services.flatMap { $0.format(snapshot) }
 }

@@ -16,6 +16,20 @@ enum DiffSignal {
     case priorityChange
 }
 
+struct DiffResult {
+    var changes: [String] = []
+    var signals: [DiffSignal] = []
+
+    var isEmpty: Bool { changes.isEmpty }
+
+    var summary: String {
+        if isEmpty { return "no changes" }
+        return changes.count == 1
+            ? "1 change detected"
+            : "\(changes.count) changes detected"
+    }
+}
+
 /// A service that fetches, diffs, and formats one slice of triage data.
 protocol DataSourceService {
     var label: String { get }

@@ -1,12 +1,12 @@
 import Foundation
 
-func formatFull(reason: String, snapshot: Snapshot, analysisLines: [String]) -> String {
+func formatFull(reason: String, snapshot: Snapshot, serviceLines: [String]) -> String {
     var lines: [String] = []
     lines.append("MODE: FULL")
     lines.append("REASON: \(reason)")
     lines.append("")
 
-    lines += analysisLines
+    lines += serviceLines
     lines.append("")
 
     lines.append("---RAW_DATA---")
