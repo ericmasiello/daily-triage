@@ -1,20 +1,12 @@
 import Foundation
 
-func formatFull(reason: String, snapshot: Snapshot, analysis: AnalysisResult) -> String {
+func formatFull(reason: String, snapshot: Snapshot, analysisLines: [String]) -> String {
     var lines: [String] = []
     lines.append("MODE: FULL")
     lines.append("REASON: \(reason)")
     lines.append("")
 
-    lines.append("---ANALYSIS---")
-    let analysisEncoder = JSONEncoder()
-    analysisEncoder.outputFormatting = [.sortedKeys]
-    analysisEncoder.keyEncodingStrategy = .convertToSnakeCase
-    if let analysisData = try? analysisEncoder.encode(analysis),
-       let analysisString = String(data: analysisData, encoding: .utf8) {
-        lines.append(analysisString)
-    }
-    lines.append("---END_ANALYSIS---")
+    lines += analysisLines
     lines.append("")
 
     lines.append("---RAW_DATA---")
