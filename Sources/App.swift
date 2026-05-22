@@ -42,8 +42,8 @@ struct TriageCache {
 
         let runShell: ShellRunner = { command, dir in try shell(command, workingDirectory: dir) }
 
-        async let glResult = fetchGitLabService(config: config, shell: runShell)
-        async let tdResult = fetchTodoistService(config: config, shell: runShell)
+        async let glResult = fetchService(GitLabService(), config: config, shell: runShell)
+        async let tdResult = fetchService(TodoistService(), config: config, shell: runShell)
 
         let (gitlabService, gitlabError) = await glResult
         var (todoistService, _) = await tdResult
@@ -104,23 +104,13 @@ struct TriageCache {
 
 // MARK: - Fetch helpers
 
-private func fetchGitLabService(config: Config, shell: @escaping ShellRunner) async -> (GitLabService, Error?) {
-    var service = GitLabService()
+private func fetchService<S: DataSourceService>(_ service: S, config: Config, shell: @escaping ShellRunner) async -> (S, Error?) {
+    var svc = service
     do {
-        try await service.fetch(config: config, shell: shell)
-        return (service, nil)
+        try await svc.fetch(config: config, shell: shell)
+        return (svc, nil)
     } catch {
-        return (service, error)
-    }
-}
-
-private func fetchTodoistService(config: Config, shell: @escaping ShellRunner) async -> (TodoistService, Error?) {
-    var service = TodoistService()
-    do {
-        try await service.fetch(config: config, shell: shell)
-        return (service, nil)
-    } catch {
-        return (service, error)
+        return (svc, error)
     }
 }
 
