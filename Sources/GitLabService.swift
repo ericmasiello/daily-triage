@@ -414,6 +414,22 @@ private func describeOptional<T>(_ value: T?) -> String {
 
 private struct AnalysisResult: Codable {
     let prdHierarchy: [PRDHierarchyEntry]
+    let tier2Issues: [TierIssue]
+    let tier3Issues: [TierIssue]
+
+    enum CodingKeys: String, CodingKey {
+        case prdHierarchy = "prd_hierarchy"
+        case tier2Issues = "tier_2_issues"
+        case tier3Issues = "tier_3_issues"
+    }
+}
+
+private struct TierIssue: Codable {
+    let iid: Int
+    let title: String
+    let workstreamCompletion: Int?
+    let priority: String?
+    let reason: String
 }
 
 private struct PRDHierarchyEntry: Codable {
@@ -476,10 +492,76 @@ private func computeAnalysis(snapshot: Snapshot, issueDescriptions: [Int: String
         ))
     }
 
-    return AnalysisResult(prdHierarchy: entries)
+    // MARK: Tiering — child IID → best (highest) workstream completion %
+    // An issue can belong to multiple PRDs; use the highest completion.
+    var childToCompletion: [Int: Int] = [:]
+    for entry in entries {
+        for child in entry.children {
+            let existing = childToCompletion[child.iid] ?? -1
+            if entry.completion.percentage > existing {
+                childToCompletion[child.iid] = entry.completion.percentage
+            }
+        }
+    }
+
+    // PRD parents are excluded from tiering (they're work stream trackers).
+    let prdIIDs = Set(entries.map { $0.prdIid })
+
+    let openIssues = snapshot.issues
+
+    var tier2: [TierIssue] = []
+    var tier3: [TierIssue] = []
+
+    for issue in openIssues {
+        if prdIIDs.contains(issue.iid) { continue }
+
+        let priority = issue.labels.first(where: { $0.hasPrefix("p::") })
+
+        if let completion = childToCompletion[issue.iid], completion >= 80 {
+            tier2.append(TierIssue(
+                iid: issue.iid,
+                title: issue.title,
+                workstreamCompletion: completion,
+                priority: priority,
+                reason: "near_complete_workstream"
+            ))
+        } else {
+            tier3.append(TierIssue(
+                iid: issue.iid,
+                title: issue.title,
+                workstreamCompletion: nil,
+                priority: priority,
+                reason: "remaining_by_value_age"
+            ))
+        }
+    }
+
+    // Sort within each tier: priority rank (p::1 > p::2 > p::3 > none), then age (oldest first).
+    let sortTier = { (a: TierIssue, b: TierIssue) -> Bool in
+        let rankA = priorityRank(a.priority)
+        let rankB = priorityRank(b.priority)
+        if rankA != rankB { return rankA < rankB }
+        // Fall back to age: lower iid = older (stable proxy when createdAt unavailable in TierIssue).
+        // In practice iids are monotonically assigned so lower iid ≈ older issue.
+        return a.iid < b.iid
+    }
+
+    tier2.sort(by: sortTier)
+    tier3.sort(by: sortTier)
+
+    return AnalysisResult(prdHierarchy: entries, tier2Issues: tier2, tier3Issues: tier3)
 }
 
 // MARK: - Description parsing
+
+private func priorityRank(_ label: String?) -> Int {
+    switch label {
+    case "p::1": return 0
+    case "p::2": return 1
+    case "p::3": return 2
+    default:     return 3
+    }
+}
 
 private func parseParentReferences(_ description: String) -> [Int] {
     var parents: [Int] = []
