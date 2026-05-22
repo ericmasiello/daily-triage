@@ -46,7 +46,7 @@ struct TriageCache {
         async let tdResult = fetchTodoistService(config: config, shell: runShell)
 
         let (gitlabService, gitlabError) = await glResult
-        var todoistService = await tdResult
+        var (todoistService, _) = await tdResult
 
         if let error = gitlabError, gitlabService.failurePolicy == .fatal {
             fputs("Error: \(gitlabService.label) service failed — \(error)\n", stderr)
@@ -114,10 +114,14 @@ private func fetchGitLabService(config: Config, shell: @escaping ShellRunner) as
     }
 }
 
-private func fetchTodoistService(config: Config, shell: @escaping ShellRunner) async -> TodoistService {
+private func fetchTodoistService(config: Config, shell: @escaping ShellRunner) async -> (TodoistService, Error?) {
     var service = TodoistService()
-    try? await service.fetch(config: config, shell: shell)
-    return service
+    do {
+        try await service.fetch(config: config, shell: shell)
+        return (service, nil)
+    } catch {
+        return (service, error)
+    }
 }
 
 // MARK: - Snapshot assembly
