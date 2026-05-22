@@ -13,7 +13,7 @@ MOCK_DIR="$SCRIPT_DIR/mocks"
 FIXTURE_DIR="$SCRIPT_DIR/fixtures"
 
 RESULT_DIR="$(mktemp -d)"
-TOTAL=20
+TOTAL=21
 
 # Colors
 GREEN='\033[0;32m'
@@ -688,6 +688,69 @@ setup_test "20. DELTA detects Todoist task changes"
   assert_stdout_contains "$stdout" "---CHANGES---" || ok=false
   assert_stdout_contains "$stdout" "Todoist: added (Deploy hotfix)" || ok=false
   assert_stdout_contains "$stdout" "Todoist: removed (Update documentation)" || ok=false
+
+  $ok && pass
+)
+teardown_test
+
+# ── Test 21: Issue tiering — tier assignment, priority sort, no cross-tier promotion
+
+setup_test "21. Issue tiering: Tier 2/3 assignment with priority boosts"
+(
+  export MOCK_FIXTURE_SET="issue-tiering"
+
+  stdout=$("$BINARY" 2>/dev/null)
+  exit_code=$?
+  ok=true
+
+  assert_exit_code "$exit_code" "0" || ok=false
+  assert_stdout_contains "$stdout" "MODE: FULL" || ok=false
+  assert_stdout_contains "$stdout" "---ANALYSIS---" || ok=false
+
+  analysis_json=$(echo "$stdout" | sed -n '/---ANALYSIS---/,/---END_ANALYSIS---/p' | grep -v '^---')
+
+  if ! echo "$analysis_json" | python3 -c "import sys, json; json.load(sys.stdin)" 2>/dev/null; then
+    fail "ANALYSIS section is not valid JSON"
+    ok=false
+  fi
+
+  if ! echo "$analysis_json" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+
+# Tier 2: exactly 1 issue (iid 103) from the 80%-complete workstream
+t2 = data['tier_2_issues']
+assert len(t2) == 1, f'tier_2_issues: expected 1, got {len(t2)}'
+assert t2[0]['iid'] == 103, f'tier_2 iid: expected 103, got {t2[0][\"iid\"]}'
+assert t2[0]['workstream_completion'] == 80, f'tier_2 completion: expected 80, got {t2[0][\"workstream_completion\"]}'
+assert t2[0].get('priority') == 'p::2', f'tier_2 priority: expected p::2, got {t2[0].get(\"priority\")}'
+assert t2[0]['reason'] == 'near_complete_workstream', f'tier_2 reason wrong: {t2[0][\"reason\"]}'
+
+# Tier 3: 3 issues sorted by priority (p::1 > p::3 > none)
+t3 = data['tier_3_issues']
+assert len(t3) == 3, f'tier_3_issues: expected 3, got {len(t3)}'
+assert t3[0]['iid'] == 201, f'tier_3[0] iid: expected 201 (p::1), got {t3[0][\"iid\"]}'
+assert t3[0].get('priority') == 'p::1', f'tier_3[0] priority: expected p::1, got {t3[0].get(\"priority\")}'
+assert t3[1]['iid'] == 203, f'tier_3[1] iid: expected 203 (p::3), got {t3[1][\"iid\"]}'
+assert t3[1].get('priority') == 'p::3', f'tier_3[1] priority: expected p::3, got {t3[1].get(\"priority\")}'
+assert t3[2]['iid'] == 300, f'tier_3[2] iid: expected 300 (no priority), got {t3[2][\"iid\"]}'
+assert t3[2].get('priority') is None, f'tier_3[2] priority: expected null, got {t3[2].get(\"priority\")}'
+
+# Cross-tier check: p::1 issue stays in Tier 3 (not promoted to Tier 2)
+t2_iids = {i['iid'] for i in t2}
+assert 201 not in t2_iids, 'p::1 issue (201) must NOT be promoted to Tier 2'
+
+# Tier 3 workstream_completion should be absent or null
+for item in t3:
+    assert item.get('workstream_completion') is None, f'tier_3 item {item[\"iid\"]} should have null workstream_completion'
+
+# Tier 3 reason
+for item in t3:
+    assert item['reason'] == 'remaining_by_value_age', f'tier_3 item {item[\"iid\"]} reason wrong: {item[\"reason\"]}'
+" 2>/dev/null; then
+    fail "Issue tiering content is incorrect"
+    ok=false
+  fi
 
   $ok && pass
 )
