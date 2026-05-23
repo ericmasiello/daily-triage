@@ -13,7 +13,7 @@ MOCK_DIR="$SCRIPT_DIR/mocks"
 FIXTURE_DIR="$SCRIPT_DIR/fixtures"
 
 RESULT_DIR="$(mktemp -d)"
-TOTAL=21
+TOTAL=24
 
 # Colors
 GREEN='\033[0;32m'
@@ -749,6 +749,129 @@ for item in t3:
     assert item['reason'] == 'remaining_by_value_age', f'tier_3 item {item[\"iid\"]} reason wrong: {item[\"reason\"]}'
 " 2>/dev/null; then
     fail "Issue tiering content is incorrect"
+    ok=false
+  fi
+
+  $ok && pass
+)
+teardown_test
+
+# ── Test 22: MR ranking order in ANALYSIS ────────────────────────────────
+
+setup_test "22. Tier 1 MR ranking: changes_requested first, then by age"
+(
+  export MOCK_FIXTURE_SET="mr-ranking"
+
+  stdout=$("$BINARY" 2>/dev/null)
+  exit_code=$?
+  ok=true
+
+  assert_exit_code "$exit_code" "0" || ok=false
+  assert_stdout_contains "$stdout" "MODE: FULL" || ok=false
+  assert_stdout_contains "$stdout" "---ANALYSIS---" || ok=false
+
+  analysis_json=$(echo "$stdout" | sed -n '/---ANALYSIS---/,/---END_ANALYSIS---/p' | grep -v '^---')
+
+  if ! echo "$analysis_json" | python3 -c "import sys, json; json.load(sys.stdin)" 2>/dev/null; then
+    fail "ANALYSIS section is not valid JSON"
+    ok=false
+  fi
+
+  if ! echo "$analysis_json" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+mrs = data['tier_1_mrs']
+assert len(mrs) == 4, f'expected 4 tier_1_mrs, got {len(mrs)}'
+
+assert mrs[0]['iid'] == 100, f'first should be MR 100 (changes_requested, oldest), got {mrs[0][\"iid\"]}'
+assert mrs[0]['review_status'] == 'changes_requested', f'MR 100 status wrong: {mrs[0][\"review_status\"]}'
+assert mrs[0]['age_hours'] == 470, f'MR 100 age wrong: {mrs[0][\"age_hours\"]}'
+
+assert mrs[1]['iid'] == 150, f'second should be MR 150 (changes_requested, newer), got {mrs[1][\"iid\"]}'
+assert mrs[1]['review_status'] == 'changes_requested', f'MR 150 status wrong: {mrs[1][\"review_status\"]}'
+assert mrs[1]['age_hours'] == 254, f'MR 150 age wrong: {mrs[1][\"age_hours\"]}'
+
+assert mrs[2]['iid'] == 200, f'third should be MR 200 (awaiting_review), got {mrs[2][\"iid\"]}'
+assert mrs[2]['review_status'] == 'awaiting_review', f'MR 200 status wrong: {mrs[2][\"review_status\"]}'
+
+assert mrs[3]['iid'] == 300, f'fourth should be MR 300 (approved), got {mrs[3][\"iid\"]}'
+assert mrs[3]['review_status'] == 'approved', f'MR 300 status wrong: {mrs[3][\"review_status\"]}'
+" 2>/dev/null; then
+    fail "Tier 1 MR ranking order or content is incorrect"
+    ok=false
+  fi
+
+  $ok && pass
+)
+teardown_test
+
+# ── Test 23: Stale worktree detection in ANALYSIS ────────────────────────
+
+setup_test "23. Stale worktree detection in ANALYSIS"
+(
+  export MOCK_FIXTURE_SET="many-branches"
+  mkdir -p "$TEST_STUDIO_DIR/.worktrees/worktree-one"
+  mkdir -p "$TEST_STUDIO_DIR/.worktrees/worktree-two"
+
+  stdout=$("$BINARY" 2>/dev/null)
+  exit_code=$?
+  ok=true
+
+  assert_exit_code "$exit_code" "0" || ok=false
+  assert_stdout_contains "$stdout" "---ANALYSIS---" || ok=false
+
+  analysis_json=$(echo "$stdout" | sed -n '/---ANALYSIS---/,/---END_ANALYSIS---/p' | grep -v '^---')
+
+  if ! echo "$analysis_json" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+stale = data['stale_worktrees']
+assert len(stale) == 2, f'expected 2 stale worktrees, got {len(stale)}'
+paths = sorted([s['path'] for s in stale])
+assert paths == ['worktree-one', 'worktree-two'], f'wrong stale worktree paths: {paths}'
+for s in stale:
+    assert s['reason'] == 'branch_merged', f'wrong reason for {s[\"path\"]}: {s[\"reason\"]}'
+" 2>/dev/null; then
+    fail "Stale worktree detection incorrect"
+    ok=false
+  fi
+
+  $ok && pass
+)
+teardown_test
+
+# ── Test 24: Recommendation string in ANALYSIS + persisted to cache ──────
+
+setup_test "24. Recommendation string in ANALYSIS and cache"
+(
+  export MOCK_FIXTURE_SET="mr-ranking"
+
+  stdout=$("$BINARY" 2>/dev/null)
+  exit_code=$?
+  ok=true
+
+  assert_exit_code "$exit_code" "0" || ok=false
+
+  analysis_json=$(echo "$stdout" | sed -n '/---ANALYSIS---/,/---END_ANALYSIS---/p' | grep -v '^---')
+
+  if ! echo "$analysis_json" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+rec = data['recommendation']
+assert rec == 'Address review feedback on MR !100', f'wrong recommendation: {rec}'
+" 2>/dev/null; then
+    fail "Recommendation in ANALYSIS is incorrect"
+    ok=false
+  fi
+
+  if ! python3 -c "
+import json
+data = json.load(open('$TEST_CACHE_DIR/last-run.json'))
+rec = data.get('recommendation')
+assert rec is not None, 'recommendation should be in cache'
+assert rec == 'Address review feedback on MR !100', f'wrong cached recommendation: {rec}'
+" 2>/dev/null; then
+    fail "Recommendation not persisted to cache correctly"
     ok=false
   fi
 

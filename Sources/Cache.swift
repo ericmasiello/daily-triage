@@ -26,7 +26,7 @@ func readCache(config: Config) -> CacheEnvelope? {
     return cache
 }
 
-func writeCache(snapshot: Snapshot, config: Config) {
+func writeCache(snapshot: Snapshot, recommendation: String? = nil, config: Config) {
     let fm = FileManager.default
     if !fm.fileExists(atPath: config.cacheDir) {
         try? fm.createDirectory(atPath: config.cacheDir, withIntermediateDirectories: true)
@@ -38,7 +38,7 @@ func writeCache(snapshot: Snapshot, config: Config) {
         ttlSeconds: Int(config.ttlSeconds),
         snapshot: snapshot,
         report: nil,
-        recommendation: nil
+        recommendation: recommendation
     )
 
     guard let data = try? makeEncoder().encode(cache) else {

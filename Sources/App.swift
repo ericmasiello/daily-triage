@@ -58,8 +58,9 @@ struct TriageCache {
         if forceMode {
             let snapshot = assembleSnapshot(gitlab: gitlabService, todoist: todoistService)
             let serviceLines = collectServiceLines([gitlabService, todoistService], snapshot: snapshot)
+            let recommendation = gitlabService.computeRecommendation(snapshot: snapshot)
             print(formatFull(reason: "forced", snapshot: snapshot, serviceLines: serviceLines))
-            writeCache(snapshot: snapshot, config: config)
+            writeCache(snapshot: snapshot, recommendation: recommendation, config: config)
             exit(0)
         }
 
@@ -68,8 +69,9 @@ struct TriageCache {
         if reason != "cache_valid" {
             let snapshot = assembleSnapshot(gitlab: gitlabService, todoist: todoistService)
             let serviceLines = collectServiceLines([gitlabService, todoistService], snapshot: snapshot)
+            let recommendation = gitlabService.computeRecommendation(snapshot: snapshot)
             print(formatFull(reason: reason, snapshot: snapshot, serviceLines: serviceLines))
-            writeCache(snapshot: snapshot, config: config)
+            writeCache(snapshot: snapshot, recommendation: recommendation, config: config)
             exit(0)
         }
 
@@ -91,13 +93,15 @@ struct TriageCache {
 
         if diff.signals.contains(.priorityChange) {
             let serviceLines = collectServiceLines(services, snapshot: snapshot)
+            let recommendation = gitlabService.computeRecommendation(snapshot: snapshot)
             print(formatFull(reason: "priority_labels_changed", snapshot: snapshot, serviceLines: serviceLines))
-            writeCache(snapshot: snapshot, config: config)
+            writeCache(snapshot: snapshot, recommendation: recommendation, config: config)
         } else if diff.isEmpty {
             print(formatNoChanges(ageMinutes: ageMinutes, report: cache.report, recommendation: cache.recommendation))
         } else {
+            let recommendation = gitlabService.computeRecommendation(snapshot: snapshot)
             print(formatDelta(ageMinutes: ageMinutes, diff: diff, report: cache.report, recommendation: cache.recommendation))
-            writeCache(snapshot: snapshot, config: config)
+            writeCache(snapshot: snapshot, recommendation: recommendation, config: config)
         }
     }
 }
