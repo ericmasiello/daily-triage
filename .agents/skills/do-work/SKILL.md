@@ -73,6 +73,10 @@ If the change affects runtime behavior, run a smoke test:
 
 Verify the output format matches expectations from the README (MODE line, REASON, JSON structure).
 
+#### 5e. Sync triage skill (if output format changed)
+
+If your changes touched `Output.swift`, `GitLabService.swift`, `Models.swift`, `TodoistService.swift`, or `ServiceProtocol.swift`, invoke the `project:sync-triage-skill` skill to check whether `skills/triage/SKILL.md` needs updating.
+
 ### 6. Finish
 
 Apply the choice from step 1:
