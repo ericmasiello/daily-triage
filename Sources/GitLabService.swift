@@ -18,10 +18,19 @@ struct GitLabService: DataSourceService {
     private(set) var fetchedState: State?
     private(set) var issueDescriptions: [Int: String] = [:]
     private(set) var allIssues: [Issue] = []
+    private(set) var referenceDate: Date = Date()
 
     // MARK: - Protocol: fetch
 
     mutating func fetch(config: Config, shell: @escaping ShellRunner) async throws {
+        // Parse reference date from config for deterministic age computation in tests.
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        if let d = formatter.date(from: config.todayDate) {
+            referenceDate = d
+        }
+
         let outputs = await fetchAllGitLab(config: config, shell: shell)
 
         var nonDraftMRs:   [MR] = []
@@ -103,7 +112,8 @@ struct GitLabService: DataSourceService {
         let analysis = computeAnalysis(
             snapshot: snapshot,
             issueDescriptions: issueDescriptions,
-            allIssues: allIssues
+            allIssues: allIssues,
+            referenceDate: referenceDate
         )
 
         var lines: [String] = []
@@ -117,6 +127,16 @@ struct GitLabService: DataSourceService {
         }
         lines.append("---END_ANALYSIS---")
         return lines
+    }
+
+    func computeRecommendation(snapshot: Snapshot) -> String {
+        let analysis = computeAnalysis(
+            snapshot: snapshot,
+            issueDescriptions: issueDescriptions,
+            allIssues: allIssues,
+            referenceDate: referenceDate
+        )
+        return analysis.recommendation
     }
 }
 
@@ -414,14 +434,32 @@ private func describeOptional<T>(_ value: T?) -> String {
 
 private struct AnalysisResult: Codable {
     let prdHierarchy: [PRDHierarchyEntry]
+    let tier1Mrs: [Tier1MR]
     let tier2Issues: [TierIssue]
     let tier3Issues: [TierIssue]
+    let staleWorktrees: [StaleWorktree]
+    let recommendation: String
 
     enum CodingKeys: String, CodingKey {
         case prdHierarchy = "prd_hierarchy"
+        case tier1Mrs = "tier_1_mrs"
         case tier2Issues = "tier_2_issues"
         case tier3Issues = "tier_3_issues"
+        case staleWorktrees = "stale_worktrees"
+        case recommendation
     }
+}
+
+private struct Tier1MR: Codable {
+    let iid: Int
+    let title: String
+    let reviewStatus: String
+    let ageHours: Int
+}
+
+private struct StaleWorktree: Codable {
+    let path: String
+    let reason: String
 }
 
 private struct TierIssue: Codable {
@@ -450,7 +488,7 @@ private struct CompletionInfo: Codable {
     let percentage: Int
 }
 
-private func computeAnalysis(snapshot: Snapshot, issueDescriptions: [Int: String], allIssues: [Issue]) -> AnalysisResult {
+private func computeAnalysis(snapshot: Snapshot, issueDescriptions: [Int: String], allIssues: [Issue], referenceDate: Date) -> AnalysisResult {
     let issuesByIID = Dictionary(
         allIssues.map { ($0.iid, $0) },
         uniquingKeysWith: { _, b in b }
@@ -493,18 +531,18 @@ private func computeAnalysis(snapshot: Snapshot, issueDescriptions: [Int: String
     }
 
     // MARK: Tiering — child IID → best (highest) workstream completion %
-    // An issue can belong to multiple PRDs; use the highest completion.
     var childToCompletion: [Int: Int] = [:]
+    var childToPRDIid: [Int: Int] = [:]
     for entry in entries {
         for child in entry.children {
             let existing = childToCompletion[child.iid] ?? -1
             if entry.completion.percentage > existing {
                 childToCompletion[child.iid] = entry.completion.percentage
+                childToPRDIid[child.iid] = entry.prdIid
             }
         }
     }
 
-    // PRD parents are excluded from tiering (they're work stream trackers).
     let prdIIDs = Set(entries.map { $0.prdIid })
 
     let openIssues = snapshot.issues
@@ -536,23 +574,113 @@ private func computeAnalysis(snapshot: Snapshot, issueDescriptions: [Int: String
         }
     }
 
-    // Sort within each tier: priority rank (p::1 > p::2 > p::3 > none), then age (oldest first).
     let sortTier = { (a: TierIssue, b: TierIssue) -> Bool in
         let rankA = priorityRank(a.priority)
         let rankB = priorityRank(b.priority)
         if rankA != rankB { return rankA < rankB }
-        // Fall back to age: lower iid = older (stable proxy when createdAt unavailable in TierIssue).
-        // In practice iids are monotonically assigned so lower iid ≈ older issue.
         return a.iid < b.iid
     }
 
     tier2.sort(by: sortTier)
     tier3.sort(by: sortTier)
 
-    return AnalysisResult(prdHierarchy: entries, tier2Issues: tier2, tier3Issues: tier3)
+    // MARK: Tier 1 — MR ranking
+    let isoFormatter = ISO8601DateFormatter()
+    var tier1: [Tier1MR] = snapshot.nonDraftMrs.map { mr in
+        let status = reviewStatus(for: mr)
+        let ageHours: Int
+        if let created = mr.createdAt, let createdDate = isoFormatter.date(from: created) {
+            ageHours = max(0, Int(referenceDate.timeIntervalSince(createdDate) / 3600))
+        } else {
+            ageHours = 0
+        }
+        return Tier1MR(iid: mr.iid, title: mr.title, reviewStatus: status, ageHours: ageHours)
+    }
+
+    tier1.sort { a, b in
+        let rankA = reviewStatusRank(a.reviewStatus)
+        let rankB = reviewStatusRank(b.reviewStatus)
+        if rankA != rankB { return rankA < rankB }
+        return a.ageHours > b.ageHours
+    }
+
+    // MARK: Stale worktrees
+    let mergedBranchShortNames = Set(snapshot.mergedBranches.compactMap { branch -> String? in
+        branch.split(separator: "/", maxSplits: 1).last.map(String.init)
+    })
+
+    let staleWorktrees: [StaleWorktree] = snapshot.worktrees
+        .filter { mergedBranchShortNames.contains($0) }
+        .map { StaleWorktree(path: $0, reason: "branch_merged") }
+
+    // MARK: Recommendation
+    let recommendation = computeRecommendationString(
+        tier1: tier1,
+        tier2: tier2,
+        tier3: tier3,
+        entries: entries,
+        childToPRDIid: childToPRDIid,
+        issuesByIID: issuesByIID
+    )
+
+    return AnalysisResult(
+        prdHierarchy: entries,
+        tier1Mrs: tier1,
+        tier2Issues: tier2,
+        tier3Issues: tier3,
+        staleWorktrees: staleWorktrees,
+        recommendation: recommendation
+    )
 }
 
 // MARK: - Description parsing
+
+private func reviewStatus(for mr: MR) -> String {
+    let approved = mr.detailedMergeStatus == "approved" || mr.detailedMergeStatus == "mergeable"
+    if approved { return "approved" }
+    if (mr.userNotesCount ?? 0) > 0 { return "changes_requested" }
+    return "awaiting_review"
+}
+
+private func reviewStatusRank(_ status: String) -> Int {
+    switch status {
+    case "changes_requested": return 0
+    case "awaiting_review":   return 1
+    case "approved":          return 2
+    default:                  return 3
+    }
+}
+
+private func computeRecommendationString(
+    tier1: [Tier1MR],
+    tier2: [TierIssue],
+    tier3: [TierIssue],
+    entries: [PRDHierarchyEntry],
+    childToPRDIid: [Int: Int],
+    issuesByIID: [Int: Issue]
+) -> String {
+    if let mr = tier1.first(where: { $0.reviewStatus == "changes_requested" }) {
+        return "Address review feedback on MR !\(mr.iid)"
+    }
+    if let mr = tier1.first(where: { $0.reviewStatus == "awaiting_review" }) {
+        return "Follow up on MR !\(mr.iid) review"
+    }
+    if let issue = tier2.first {
+        let prdTitle: String
+        if let prdIid = childToPRDIid[issue.iid],
+           let prd = issuesByIID[prdIid] {
+            prdTitle = prd.title
+        } else {
+            prdTitle = "work stream"
+        }
+        let pct = issue.workstreamCompletion ?? 0
+        return "Complete near-done work stream: \(prdTitle) (\(pct)%)"
+    }
+    if let issue = tier3.first {
+        return "Work on #\(issue.iid): \(issue.title)"
+    }
+    return "No actionable items"
+}
 
 private func priorityRank(_ label: String?) -> Int {
     switch label {
