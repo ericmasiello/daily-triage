@@ -13,7 +13,7 @@ MOCK_DIR="$SCRIPT_DIR/mocks"
 FIXTURE_DIR="$SCRIPT_DIR/fixtures"
 
 RESULT_DIR="$(mktemp -d)"
-TOTAL=24
+TOTAL=25
 
 # Colors
 GREEN='\033[0;32m'
@@ -872,6 +872,56 @@ assert rec is not None, 'recommendation should be in cache'
 assert rec == 'Address review feedback on MR !100', f'wrong cached recommendation: {rec}'
 " 2>/dev/null; then
     fail "Recommendation not persisted to cache correctly"
+    ok=false
+  fi
+
+  $ok && pass
+)
+teardown_test
+
+# ── Test 25: writeCache preserves saved report across data changes ────────
+
+setup_test "25. writeCache preserves report/recommendation across DELTA"
+(
+  # First run: creates cache
+  "$BINARY" >/dev/null 2>&1
+
+  # Save a report with recommendation
+  "$BINARY" --save-report "## Triage Report
+- MR !100 needs review
+My recommendation: Focus on MR !100" 2>/dev/null
+
+  # Verify report is in cache before the second run
+  if ! python3 -c "
+import json
+data = json.load(open('$TEST_CACHE_DIR/last-run.json'))
+assert data.get('report') is not None, 'report should exist after save-report'
+assert 'MR !100' in data['report'], 'report content wrong'
+assert data.get('recommendation') is not None, 'recommendation should exist after save-report'
+" 2>/dev/null; then
+    fail "report not in cache after save-report"
+    exit 1
+  fi
+
+  # Second run with changed data → triggers DELTA, calls writeCache
+  export MOCK_FIXTURE_SET="changed-mr"
+  stdout=$("$BINARY" 2>/dev/null)
+  exit_code=$?
+  ok=true
+
+  assert_exit_code "$exit_code" "0" || ok=false
+  assert_stdout_contains "$stdout" "MODE: DELTA" || ok=false
+
+  # Verify report and recommendation survived writeCache
+  if ! python3 -c "
+import json
+data = json.load(open('$TEST_CACHE_DIR/last-run.json'))
+assert data.get('report') is not None, 'report was discarded by writeCache'
+assert 'MR !100' in data['report'], 'report content was corrupted'
+assert data.get('recommendation') is not None, 'recommendation was discarded by writeCache'
+assert 'Focus on MR !100' in data['recommendation'], 'recommendation content was corrupted'
+" 2>/dev/null; then
+    fail "report/recommendation lost after DELTA writeCache"
     ok=false
   fi
 

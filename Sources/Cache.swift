@@ -32,13 +32,18 @@ func writeCache(snapshot: Snapshot, recommendation: String? = nil, config: Confi
         try? fm.createDirectory(atPath: config.cacheDir, withIntermediateDirectories: true)
     }
 
+    // Preserve report and its recommendation from a previous --save-report call.
+    // When a report exists, its recommendation (extracted from the LLM output)
+    // takes precedence over the auto-computed one.
+    let existing = readCache(config: config)
+
     let cache = CacheEnvelope(
         version: 2,
         timestamp: ISO8601DateFormatter().string(from: Date()),
         ttlSeconds: Int(config.ttlSeconds),
         snapshot: snapshot,
-        report: nil,
-        recommendation: recommendation
+        report: existing?.report,
+        recommendation: existing?.report != nil ? existing?.recommendation : recommendation
     )
 
     guard let data = try? makeEncoder().encode(cache) else {
