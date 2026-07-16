@@ -28,7 +28,7 @@ swiftlint lint --lenient Sources/  # lint (warnings allowed, errors fail)
 ./tests/run-all.sh         # build + 25 integration tests + format check
 ```
 
-`./tests/run-all.sh` runs `swiftformat --lint` and `swiftlint --lenient` internally as well, so a clean `run-all.sh` means all three pass. Iterate — fix any failures, then re-run — until the script exits 0.
+`./tests/run-all.sh` runs `swiftformat` and `swiftlint --lenient` internally as well, so a clean `run-all.sh` means all three pass. Iterate — fix any failures, then re-run — until the script exits 0.
 
 **SwiftLint requires full Xcode** (not just Command Line Tools). If `swiftlint` crashes with a `sourcekitdInProc` error, run `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` to point the toolchain at Xcode.
 

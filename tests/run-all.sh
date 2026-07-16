@@ -936,12 +936,14 @@ STATIC_FAILED=false
 printf "\n${BOLD}Static analysis:${RESET}\n"
 
 if command -v swiftformat &>/dev/null; then
-  printf "  ${BOLD}swiftformat --lint${RESET} ... "
-  if swiftformat --lint "$REPO_DIR/Sources/" 2>/dev/null; then
+  printf "  ${BOLD}swiftformat${RESET} ... "
+  swiftformat "$REPO_DIR/Sources/" 2>/dev/null
+  if git -C "$REPO_DIR" diff --exit-code Sources/ >/dev/null 2>&1; then
     printf "${GREEN}PASS${RESET}\n"
   else
     printf "${RED}FAIL${RESET}\n"
-    printf "    ${RED}→ Run: swiftformat Sources/${RESET}\n"
+    printf "    ${RED}→ swiftformat modified files; review and commit the changes${RESET}\n"
+    git -C "$REPO_DIR" diff --stat Sources/ 2>/dev/null | sed 's/^/    /'
     STATIC_FAILED=true
   fi
 else
