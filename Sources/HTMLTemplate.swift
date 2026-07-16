@@ -100,9 +100,15 @@ private let htmlPageCSS = """
           white-space: nowrap;
           flex-shrink: 0;
         }
-        .badge-full { background: rgba(88,166,255,0.15); color: var(--accent-blue); border: 1px solid rgba(88,166,255,0.3); }
-        .badge-nochange { background: rgba(63,185,80,0.15); color: var(--accent-green); border: 1px solid rgba(63,185,80,0.3); }
-        .badge-delta { background: rgba(210,153,34,0.15); color: var(--accent-yellow); border: 1px solid rgba(210,153,34,0.3); }
+        .badge-full {
+          background: rgba(88,166,255,0.15); color: var(--accent-blue);
+          border: 1px solid rgba(88,166,255,0.3); }
+        .badge-nochange {
+          background: rgba(63,185,80,0.15); color: var(--accent-green);
+          border: 1px solid rgba(63,185,80,0.3); }
+        .badge-delta {
+          background: rgba(210,153,34,0.15); color: var(--accent-yellow);
+          border: 1px solid rgba(210,153,34,0.3); }
         .badge-unknown { background: var(--surface2); color: var(--text-muted); border: 1px solid var(--border); }
 
         .meta-row {

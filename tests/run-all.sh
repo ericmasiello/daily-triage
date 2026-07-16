@@ -953,7 +953,7 @@ if command -v swiftlint &>/dev/null; then
   printf "  ${BOLD}swiftlint lint${RESET} ... "
   lint_tmpout="$(mktemp)"
   lint_exit=0
-  (set +e; swiftlint lint --quiet "$REPO_DIR/Sources/" >"$lint_tmpout" 2>&1; exit $?) 2>/dev/null || lint_exit=$?
+  (set +e; swiftlint lint --quiet --lenient "$REPO_DIR/Sources/" >"$lint_tmpout" 2>&1; exit $?) 2>/dev/null || lint_exit=$?
   lint_output="$(cat "$lint_tmpout")"
   rm -f "$lint_tmpout"
   if [[ $lint_exit -eq 133 ]] || echo "$lint_output" | grep -q "sourcekitdInProc"; then

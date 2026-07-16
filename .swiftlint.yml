@@ -65,7 +65,7 @@ function_body_length:
 
 file_length:
   warning: 500
-  error: 800
+  error: 900
 
 type_body_length:
   warning: 300

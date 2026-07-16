@@ -269,6 +269,28 @@ private func closeListIfNeeded(_ html: inout [String], inList: inout Bool) {
     }
 }
 
+private func appendMarkdownLine(_ line: String, to html: inout [String], inList: inout Bool) {
+    if line.hasPrefix("# ") {
+        closeListIfNeeded(&html, inList: &inList)
+        html.append("<h2>\(inlineMarkdown(String(line.dropFirst(2))))</h2>")
+    } else if line.hasPrefix("## ") {
+        closeListIfNeeded(&html, inList: &inList)
+        html.append("<h3>\(inlineMarkdown(String(line.dropFirst(3))))</h3>")
+    } else if line.hasPrefix("### ") {
+        closeListIfNeeded(&html, inList: &inList)
+        html.append("<h4>\(inlineMarkdown(String(line.dropFirst(4))))</h4>")
+    } else if line.hasPrefix("- ") || line.hasPrefix("* ") {
+        if !inList { html.append("<ul>"); inList = true }
+        html.append("<li>\(inlineMarkdown(String(line.dropFirst(2))))</li>")
+    } else if line.trimmingCharacters(in: .whitespaces).isEmpty {
+        closeListIfNeeded(&html, inList: &inList)
+        html.append("<br>")
+    } else {
+        closeListIfNeeded(&html, inList: &inList)
+        html.append("<p>\(inlineMarkdown(line))</p>")
+    }
+}
+
 private func markdownToHTML(_ md: String) -> String {
     let lines = md.components(separatedBy: "\n")
     var html: [String] = []
@@ -296,28 +318,7 @@ private func markdownToHTML(_ md: String) -> String {
             codeLines.append(line)
             continue
         }
-        if line.hasPrefix("# ") {
-            closeListIfNeeded(&html, inList: &inList)
-            html.append("<h2>\(inlineMarkdown(String(line.dropFirst(2))))</h2>")
-        } else if line.hasPrefix("## ") {
-            closeListIfNeeded(&html, inList: &inList)
-            html.append("<h3>\(inlineMarkdown(String(line.dropFirst(3))))</h3>")
-        } else if line.hasPrefix("### ") {
-            closeListIfNeeded(&html, inList: &inList)
-            html.append("<h4>\(inlineMarkdown(String(line.dropFirst(4))))</h4>")
-        } else if line.hasPrefix("- ") || line.hasPrefix("* ") {
-            if !inList {
-                html.append("<ul>")
-                inList = true
-            }
-            html.append("<li>\(inlineMarkdown(String(line.dropFirst(2))))</li>")
-        } else if line.trimmingCharacters(in: .whitespaces).isEmpty {
-            closeListIfNeeded(&html, inList: &inList)
-            html.append("<br>")
-        } else {
-            closeListIfNeeded(&html, inList: &inList)
-            html.append("<p>\(inlineMarkdown(line))</p>")
-        }
+        appendMarkdownLine(line, to: &html, inList: &inList)
     }
     closeListIfNeeded(&html, inList: &inList)
     if inCode {
@@ -417,8 +418,8 @@ private func modeBadge(_ mode: String) -> String {
 
 private func metaRow(mode _: String, reason: String?, cacheAge: String?, changesSummary: String?) -> String {
     var chips: [String] = []
-    if let r = reason {
-        chips.append(metaChip("Reason", r))
+    if let reasonText = reason {
+        chips.append(metaChip("Reason", reasonText))
     }
     if let age = cacheAge {
         chips.append(metaChip("Cache age", "\(age) min"))
@@ -434,8 +435,8 @@ private func metaChip(_ label: String, _ value: String) -> String {
     "<span class=\"meta-chip\"><span class=\"meta-label\">\(htmlEscape(label))</span><span class=\"meta-value\">\(htmlEscape(value))</span></span>"
 }
 
-private func statusClass(_ s: String) -> String {
-    switch s {
+private func statusClass(_ status: String) -> String {
+    switch status {
     case "approved": "approved"
     case "changes_requested": "changes"
     case "awaiting_review": "awaiting"
@@ -443,24 +444,24 @@ private func statusClass(_ s: String) -> String {
     }
 }
 
-private func statusLabel(_ s: String) -> String {
-    switch s {
+private func statusLabel(_ status: String) -> String {
+    switch status {
     case "approved": "Approved"
     case "changes_requested": "Changes Requested"
     case "awaiting_review": "Awaiting Review"
-    default: s.replacingOccurrences(of: "_", with: " ").capitalized
+    default: status.replacingOccurrences(of: "_", with: " ").capitalized
     }
 }
 
-private func anyToString(_ v: Any) -> String? {
-    if let i = v as? Int {
-        return String(i)
+private func anyToString(_ value: Any) -> String? {
+    if let intVal = value as? Int {
+        return String(intVal)
     }
-    if let d = v as? Double {
-        return String(Int(d))
+    if let doubleVal = value as? Double {
+        return String(Int(doubleVal))
     }
-    if let s = v as? String {
-        return s
+    if let strVal = value as? String {
+        return strVal
     }
     return nil
 }

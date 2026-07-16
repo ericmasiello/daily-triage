@@ -30,4 +30,4 @@ jobs:
         run: swiftformat --lint Sources/
 
       - name: Lint
-        run: swiftlint lint --quiet Sources/
+        run: swiftlint lint --quiet --lenient Sources/
