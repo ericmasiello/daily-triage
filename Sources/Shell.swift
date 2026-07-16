@@ -5,7 +5,7 @@ enum ShellError: Error, CustomStringConvertible {
 
     var description: String {
         switch self {
-        case .nonZeroExit(let code, let stderr):
+        case let .nonZeroExit(code, stderr):
             let detail = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             return detail.isEmpty ? "exit code \(code)" : detail
         }

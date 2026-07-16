@@ -67,9 +67,9 @@ struct TodoistService: DataSourceService {
 
         for output in outputs {
             switch output {
-            case .todayOverdue(let tasks): todayOverdueTasks = tasks
-            case .upNext(let tasks): upNextTasks = tasks
-            case .failed(let msg): errors.append(msg)
+            case let .todayOverdue(tasks): todayOverdueTasks = tasks
+            case let .upNext(tasks): upNextTasks = tasks
+            case let .failed(msg): errors.append(msg)
             }
         }
 
@@ -87,7 +87,7 @@ struct TodoistService: DataSourceService {
         let overdue = todayOverdue.filter { ($0.due?.date ?? "") < config.todayDate }
         let today = todayOverdue.filter { ($0.due?.date ?? "") >= config.todayDate }
 
-        let todayOverdueIDs = Set(todayOverdue.map { $0.id })
+        let todayOverdueIDs = Set(todayOverdue.map(\.id))
         let dedupedUpNext = upNext.filter { !todayOverdueIDs.contains($0.id) }
 
         fetchedState = State(overdue: overdue, today: today, upNext: dedupedUpNext)
@@ -103,8 +103,8 @@ struct TodoistService: DataSourceService {
 
     // MARK: - Protocol: format
 
-    func format(_ snapshot: Snapshot) -> [String] {
-        return []
+    func format(_: Snapshot) -> [String] {
+        []
     }
 
     // MARK: - Reconciliation
@@ -145,7 +145,8 @@ private extension TodoistService.State.Task {
             id: raw.id,
             content: raw.content,
             priority: raw.priority,
-            due: raw.due.map { TodoistService.State.Due(date: $0.date, isRecurring: $0.isRecurring, string: $0.string) },
+            due: raw.due
+                .map { TodoistService.State.Due(date: $0.date, isRecurring: $0.isRecurring, string: $0.string) },
             labels: raw.labels,
             url: raw.url
         )
@@ -172,7 +173,9 @@ private enum TodoistFetchOutput: Sendable {
 // MARK: - Diff internals
 
 private func diffTodoist(cached: TodoistService.State?, fresh: TodoistService.State?) -> [String] {
-    if cached == nil && fresh == nil { return [] }
+    if cached == nil && fresh == nil {
+        return []
+    }
 
     let cachedTasks = flattenTodoist(cached)
     let freshTasks = flattenTodoist(fresh)
@@ -213,8 +216,14 @@ private func diffTodoist(cached: TodoistService.State?, fresh: TodoistService.St
 private func flattenTodoist(_ snapshot: TodoistService.State?) -> [String: (String, TodoistService.State.Task)] {
     guard let s = snapshot else { return [:] }
     var result: [String: (String, TodoistService.State.Task)] = [:]
-    for task in s.overdue { result[task.id] = ("overdue", task) }
-    for task in s.today { result[task.id] = ("today", task) }
-    for task in s.upNext { result[task.id] = ("up_next", task) }
+    for task in s.overdue {
+        result[task.id] = ("overdue", task)
+    }
+    for task in s.today {
+        result[task.id] = ("today", task)
+    }
+    for task in s.upNext {
+        result[task.id] = ("up_next", task)
+    }
     return result
 }

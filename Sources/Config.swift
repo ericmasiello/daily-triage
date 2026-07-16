@@ -23,7 +23,8 @@ struct OutputOptions {
         var autoOpen: OutputFormat? = nil
 
         if let formatFlagIndex = args.firstIndex(of: "--format"), formatFlagIndex + 1 < args.count {
-            let rawFormats = args[formatFlagIndex + 1].split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            let rawFormats = args[formatFlagIndex + 1].split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
             let parsed = rawFormats.compactMap { OutputFormat(rawValue: $0.lowercased()) }
             if !parsed.isEmpty {
                 formats = Set(parsed)

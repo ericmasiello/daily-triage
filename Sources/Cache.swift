@@ -20,7 +20,8 @@ private func makeEncoder() -> JSONEncoder {
 func readCache(config: Config) -> CacheEnvelope? {
     guard let data = FileManager.default.contents(atPath: config.cachePath),
           let cache = try? makeDecoder().decode(CacheEnvelope.self, from: data),
-          cache.version == 2 else {
+          cache.version == 2
+    else {
         return nil
     }
     return cache
@@ -67,14 +68,14 @@ enum SaveReportError: Error, CustomStringConvertible {
 
     var description: String {
         switch self {
-        case .cacheNotFound(let path):
-            return "cache file not found at \(path) — run triage-cache first"
-        case .cacheCorrupt(let path):
-            return "cache file corrupt at \(path) — run triage-cache first"
+        case let .cacheNotFound(path):
+            "cache file not found at \(path) — run triage-cache first"
+        case let .cacheCorrupt(path):
+            "cache file corrupt at \(path) — run triage-cache first"
         case .serializationFailed:
-            return "failed to serialize updated cache"
-        case .writeFailed(let error):
-            return "failed to write cache file: \(error.localizedDescription)"
+            "failed to serialize updated cache"
+        case let .writeFailed(error):
+            "failed to write cache file: \(error.localizedDescription)"
         }
     }
 }
@@ -127,7 +128,8 @@ func determineReason(config: Config) -> String {
         return "cache_corrupt"
     }
     if let date = ISO8601DateFormatter().date(from: cache.timestamp),
-       Date().timeIntervalSince(date) > config.ttlSeconds {
+       Date().timeIntervalSince(date) > config.ttlSeconds
+    {
         return "cache_expired"
     }
     return "cache_valid"

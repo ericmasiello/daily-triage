@@ -60,8 +60,11 @@ struct TriageCache {
             let snapshot = assembleSnapshot(gitlab: gitlabService, todoist: todoistService)
             let serviceLines = collectServiceLines([gitlabService, todoistService], snapshot: snapshot)
             let recommendation = gitlabService.computeRecommendation(snapshot: snapshot)
-            emit(formatFull(reason: "forced", snapshot: snapshot, serviceLines: serviceLines),
-                 options: outputOptions, config: config)
+            emit(
+                formatFull(reason: "forced", snapshot: snapshot, serviceLines: serviceLines),
+                options: outputOptions,
+                config: config
+            )
             writeCache(snapshot: snapshot, recommendation: recommendation, config: config)
             exit(0)
         }
@@ -72,8 +75,11 @@ struct TriageCache {
             let snapshot = assembleSnapshot(gitlab: gitlabService, todoist: todoistService)
             let serviceLines = collectServiceLines([gitlabService, todoistService], snapshot: snapshot)
             let recommendation = gitlabService.computeRecommendation(snapshot: snapshot)
-            emit(formatFull(reason: reason, snapshot: snapshot, serviceLines: serviceLines),
-                 options: outputOptions, config: config)
+            emit(
+                formatFull(reason: reason, snapshot: snapshot, serviceLines: serviceLines),
+                options: outputOptions,
+                config: config
+            )
             writeCache(snapshot: snapshot, recommendation: recommendation, config: config)
             exit(0)
         }
@@ -97,16 +103,30 @@ struct TriageCache {
         if diff.signals.contains(.priorityChange) {
             let serviceLines = collectServiceLines(services, snapshot: snapshot)
             let recommendation = gitlabService.computeRecommendation(snapshot: snapshot)
-            emit(formatFull(reason: "priority_labels_changed", snapshot: snapshot, serviceLines: serviceLines),
-                 options: outputOptions, config: config)
+            emit(
+                formatFull(reason: "priority_labels_changed", snapshot: snapshot, serviceLines: serviceLines),
+                options: outputOptions,
+                config: config
+            )
             writeCache(snapshot: snapshot, recommendation: recommendation, config: config)
         } else if diff.isEmpty {
-            emit(formatNoChanges(ageMinutes: ageMinutes, report: cache.report, recommendation: cache.recommendation),
-                 options: outputOptions, config: config)
+            emit(
+                formatNoChanges(ageMinutes: ageMinutes, report: cache.report, recommendation: cache.recommendation),
+                options: outputOptions,
+                config: config
+            )
         } else {
             let recommendation = gitlabService.computeRecommendation(snapshot: snapshot)
-            emit(formatDelta(ageMinutes: ageMinutes, diff: diff, report: cache.report, recommendation: cache.recommendation),
-                 options: outputOptions, config: config)
+            emit(
+                formatDelta(
+                    ageMinutes: ageMinutes,
+                    diff: diff,
+                    report: cache.report,
+                    recommendation: cache.recommendation
+                ),
+                options: outputOptions,
+                config: config
+            )
             writeCache(snapshot: snapshot, recommendation: recommendation, config: config)
         }
     }
@@ -114,7 +134,11 @@ struct TriageCache {
 
 // MARK: - Fetch helpers
 
-private func fetchService<S: DataSourceService>(_ service: S, config: Config, shell: @escaping ShellRunner) async -> (S, Error?) {
+private func fetchService<S: DataSourceService>(
+    _ service: S,
+    config: Config,
+    shell: @escaping ShellRunner
+) async -> (S, Error?) {
     var svc = service
     do {
         try await svc.fetch(config: config, shell: shell)

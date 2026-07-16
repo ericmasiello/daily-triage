@@ -28,8 +28,8 @@ enum HTMLOutputError: Error, CustomStringConvertible {
 
     var description: String {
         switch self {
-        case .encodingFailed: return "failed to encode HTML as UTF-8"
-        case .writeFailed(let e): return "failed to write HTML file: \(e.localizedDescription)"
+        case .encodingFailed: "failed to encode HTML as UTF-8"
+        case let .writeFailed(e): "failed to write HTML file: \(e.localizedDescription)"
         }
     }
 }
@@ -69,7 +69,8 @@ private func renderHTML(from text: String) -> String {
     // Recommendation callout (primary CTA)
     let recText = recommendation ?? previousRec
     if let rec = recText, !rec.isEmpty, rec != "(none)" {
-        let clean = rec.hasPrefix("PREVIOUS_RECOMMENDATION:") ? String(rec.dropFirst("PREVIOUS_RECOMMENDATION:".count)).trimmingCharacters(in: .whitespaces) : rec
+        let clean = rec.hasPrefix("PREVIOUS_RECOMMENDATION:") ? String(rec.dropFirst("PREVIOUS_RECOMMENDATION:".count))
+            .trimmingCharacters(in: .whitespaces) : rec
         sections.append("""
         <div class="recommendation-card">
           <div class="rec-label">Recommendation</div>
@@ -89,7 +90,8 @@ private func renderHTML(from text: String) -> String {
         <div class="section">
           <h2>Changes</h2>
           <ul class="changes-list">
-            \(changes.components(separatedBy: "\n").filter { !$0.isEmpty }.map { "<li>\(htmlEscape($0))</li>" }.joined(separator: "\n            "))
+            \(changes.components(separatedBy: "\n").filter { !$0.isEmpty }.map { "<li>\(htmlEscape($0))</li>" }
+            .joined(separator: "\n            "))
           </ul>
         </div>
         """)
@@ -112,7 +114,8 @@ private func renderHTML(from text: String) -> String {
 
 private func renderAnalysis(_ jsonString: String) -> String {
     guard let data = jsonString.data(using: .utf8),
-          let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+          let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else {
         return """
         <div class="section">
           <h2>Analysis</h2>
@@ -155,7 +158,9 @@ private func renderAnalysis(_ jsonString: String) -> String {
         """)
     }
 
-    if cards.isEmpty { return "" }
+    if cards.isEmpty {
+        return ""
+    }
 
     return """
     <div class="section">
@@ -182,7 +187,8 @@ private func mrTable(title: String, mrs: [[String: Any]], accent: String) -> Str
         return """
             <tr>
               <td class="mr-iid">\(iidLink)</td>
-              <td class="mr-title">\(htmlEscape(mrTitle))\(labelBadges.isEmpty ? "" : "<div class=\"label-row\">\(labelBadges)</div>")</td>
+              <td class="mr-title">\(htmlEscape(mrTitle))\(labelBadges
+            .isEmpty ? "" : "<div class=\"label-row\">\(labelBadges)</div>")</td>
               <td>\(statusBadge)</td>
               <td class="mr-age">\(ageText)</td>
             </tr>
@@ -217,7 +223,8 @@ private func issueTable(_ issues: [[String: Any]]) -> String {
         return """
             <tr>
               <td class="mr-iid">\(iidLink)</td>
-              <td class="mr-title">\(htmlEscape(title))\(labelBadges.isEmpty ? "" : "<div class=\"label-row\">\(labelBadges)</div>")</td>
+              <td class="mr-title">\(htmlEscape(title))\(labelBadges
+            .isEmpty ? "" : "<div class=\"label-row\">\(labelBadges)</div>")</td>
               <td>\(tierBadge)</td>
             </tr>
         """
@@ -272,7 +279,9 @@ private func markdownToHTML(_ md: String) -> String {
                 inCode = false
                 codeLang = ""
             } else {
-                if inList { html.append("</ul>"); inList = false }
+                if inList {
+                    html.append("</ul>"); inList = false
+                }
                 inCode = true
                 codeLang = htmlEscape(String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces))
             }
@@ -283,26 +292,40 @@ private func markdownToHTML(_ md: String) -> String {
             continue
         }
         if line.hasPrefix("# ") {
-            if inList { html.append("</ul>"); inList = false }
+            if inList {
+                html.append("</ul>"); inList = false
+            }
             html.append("<h2>\(inlineMarkdown(String(line.dropFirst(2))))</h2>")
         } else if line.hasPrefix("## ") {
-            if inList { html.append("</ul>"); inList = false }
+            if inList {
+                html.append("</ul>"); inList = false
+            }
             html.append("<h3>\(inlineMarkdown(String(line.dropFirst(3))))</h3>")
         } else if line.hasPrefix("### ") {
-            if inList { html.append("</ul>"); inList = false }
+            if inList {
+                html.append("</ul>"); inList = false
+            }
             html.append("<h4>\(inlineMarkdown(String(line.dropFirst(4))))</h4>")
         } else if line.hasPrefix("- ") || line.hasPrefix("* ") {
-            if !inList { html.append("<ul>"); inList = true }
+            if !inList {
+                html.append("<ul>"); inList = true
+            }
             html.append("<li>\(inlineMarkdown(String(line.dropFirst(2))))</li>")
         } else if line.trimmingCharacters(in: .whitespaces).isEmpty {
-            if inList { html.append("</ul>"); inList = false }
+            if inList {
+                html.append("</ul>"); inList = false
+            }
             html.append("<br>")
         } else {
-            if inList { html.append("</ul>"); inList = false }
+            if inList {
+                html.append("</ul>"); inList = false
+            }
             html.append("<p>\(inlineMarkdown(line))</p>")
         }
     }
-    if inList { html.append("</ul>") }
+    if inList {
+        html.append("</ul>")
+    }
     if inCode {
         let escaped = codeLines.map { htmlEscape($0) }.joined(separator: "\n")
         html.append("<pre class=\"code-block\"><code>\(escaped)</code></pre>")
@@ -358,14 +381,18 @@ private func applyLinks(_ s: String) -> String {
 
 private func extractMode(from text: String) -> String {
     for line in text.components(separatedBy: "\n") {
-        if line.hasPrefix("MODE: ") { return String(line.dropFirst(6)) }
+        if line.hasPrefix("MODE: ") {
+            return String(line.dropFirst(6))
+        }
     }
     return "UNKNOWN"
 }
 
 private func extractValue(from text: String, key: String) -> String? {
     for line in text.components(separatedBy: "\n") {
-        if line.hasPrefix("\(key): ") { return String(line.dropFirst(key.count + 2)) }
+        if line.hasPrefix("\(key): ") {
+            return String(line.dropFirst(key.count + 2))
+        }
     }
     return nil
 }
@@ -375,7 +402,7 @@ private func extractBlock(from text: String, start: String, end: String) -> Stri
     guard let startIdx = lines.firstIndex(of: start),
           let endIdx = lines.firstIndex(of: end),
           endIdx > startIdx else { return nil }
-    return lines[(startIdx + 1)..<endIdx].joined(separator: "\n")
+    return lines[(startIdx + 1) ..< endIdx].joined(separator: "\n")
 }
 
 private func extractRecommendation(from text: String) -> String? {
@@ -398,11 +425,17 @@ private func modeBadge(_ mode: String) -> String {
     return "<span class=\"mode-badge \(cls)\">\(label)</span>"
 }
 
-private func metaRow(mode: String, reason: String?, cacheAge: String?, changesSummary: String?) -> String {
+private func metaRow(mode _: String, reason: String?, cacheAge: String?, changesSummary: String?) -> String {
     var chips: [String] = []
-    if let r = reason { chips.append(metaChip("Reason", r)) }
-    if let age = cacheAge { chips.append(metaChip("Cache age", "\(age) min")) }
-    if let cs = changesSummary { chips.append(metaChip("Changes", cs)) }
+    if let r = reason {
+        chips.append(metaChip("Reason", r))
+    }
+    if let age = cacheAge {
+        chips.append(metaChip("Cache age", "\(age) min"))
+    }
+    if let cs = changesSummary {
+        chips.append(metaChip("Changes", cs))
+    }
     guard !chips.isEmpty else { return "" }
     return "<div class=\"meta-row\">\(chips.joined())</div>"
 }
@@ -413,34 +446,40 @@ private func metaChip(_ label: String, _ value: String) -> String {
 
 private func statusClass(_ s: String) -> String {
     switch s {
-    case "approved": return "approved"
-    case "changes_requested": return "changes"
-    case "awaiting_review": return "awaiting"
-    default: return "other"
+    case "approved": "approved"
+    case "changes_requested": "changes"
+    case "awaiting_review": "awaiting"
+    default: "other"
     }
 }
 
 private func statusLabel(_ s: String) -> String {
     switch s {
-    case "approved": return "Approved"
-    case "changes_requested": return "Changes Requested"
-    case "awaiting_review": return "Awaiting Review"
-    default: return s.replacingOccurrences(of: "_", with: " ").capitalized
+    case "approved": "Approved"
+    case "changes_requested": "Changes Requested"
+    case "awaiting_review": "Awaiting Review"
+    default: s.replacingOccurrences(of: "_", with: " ").capitalized
     }
 }
 
 private func anyToString(_ v: Any) -> String? {
-    if let i = v as? Int { return String(i) }
-    if let d = v as? Double { return String(Int(d)) }
-    if let s = v as? String { return s }
+    if let i = v as? Int {
+        return String(i)
+    }
+    if let d = v as? Double {
+        return String(Int(d))
+    }
+    if let s = v as? String {
+        return s
+    }
     return nil
 }
 
 private func htmlEscape(_ s: String) -> String {
     s.replacingOccurrences(of: "&", with: "&amp;")
-     .replacingOccurrences(of: "<", with: "&lt;")
-     .replacingOccurrences(of: ">", with: "&gt;")
-     .replacingOccurrences(of: "\"", with: "&quot;")
+        .replacingOccurrences(of: "<", with: "&lt;")
+        .replacingOccurrences(of: ">", with: "&gt;")
+        .replacingOccurrences(of: "\"", with: "&quot;")
 }
 
 // MARK: - Page template
