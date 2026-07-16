@@ -549,6 +549,7 @@ private struct ReviewQueueMR: Codable {
     let repo: String
     let role: String
     let ageHours: Int
+    let webUrl: String?
 }
 
 private struct StaleWorktree: Codable {
@@ -728,7 +729,8 @@ private func computeAnalysis(
                 title: existing.title,
                 repo: existing.repo,
                 role: "reviewer+assignee",
-                ageHours: existing.ageHours
+                ageHours: existing.ageHours,
+                webUrl: existing.webUrl
             )
         } else {
             reviewQueueByURL[key] = ReviewQueueMR(
@@ -736,7 +738,8 @@ private func computeAnalysis(
                 title: mr.title,
                 repo: mr.repoPath ?? "unknown",
                 role: role,
-                ageHours: ageHours
+                ageHours: ageHours,
+                webUrl: mr.webUrl
             )
         }
     }
