@@ -13,7 +13,7 @@ MOCK_DIR="$SCRIPT_DIR/mocks"
 FIXTURE_DIR="$SCRIPT_DIR/fixtures"
 
 RESULT_DIR="$(mktemp -d)"
-TOTAL=25
+TOTAL=26
 
 # Colors
 GREEN='\033[0;32m'
@@ -110,6 +110,8 @@ assert_file_not_exists() {
 
 assert_valid_json() {
   local path="$1"
+  # Open the file at $path and try to parse it as JSON.
+  # If parsing fails (the file isn't valid JSON), the assertion fails.
   if ! python3 -c "import json; json.load(open('$path'))" 2>/dev/null; then
     fail "invalid JSON in $path"
     return 1
@@ -230,7 +232,7 @@ setup_test "5. Cache expired (>1h) → FULL + cache_expired"
   "version": 2,
   "timestamp": "$old_ts",
   "ttl_seconds": 3600,
-  "snapshot": {"non_draft_mrs":[],"draft_mrs":[],"sandcastle_mrs":[],"issues":[],"worktrees":[],"merged_branches":[]},
+  "snapshot": {"non_draft_mrs":[],"draft_mrs":[],"sandcastle_mrs":[],"reviewer_mrs":[],"assigned_mrs":[],"issues":[],"worktrees":[],"merged_branches":[]},
   "report": null,
   "recommendation": null,
   "todoist": null
@@ -339,6 +341,10 @@ My recommendation: Focus on MR !100"
 
   # Verify cache file has report and recommendation
   cache_content=$(cat "$TEST_CACHE_DIR/last-run.json")
+  # Read the cache JSON from stdin, then check:
+  # - 'report' key exists and is not null
+  # - the report text contains "MR !100"
+  # - 'recommendation' key exists and is not null
   if ! echo "$cache_content" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
@@ -476,6 +482,8 @@ setup_test "14. Merged branches filtered to worktree matches only"
 
   raw_data=$(echo "$stdout" | sed -n '/---RAW_DATA---/,/---END_RAW_DATA---/p' | grep -v '^---')
 
+  # Parse the JSON and print the count of items in the 'merged_branches' array.
+  # The result is captured into $branch_count for the assertion below.
   branch_count=$(echo "$raw_data" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d['merged_branches']))" 2>/dev/null)
   if [[ "$branch_count" != "2" ]]; then
     fail "expected 2 filtered branches, got ${branch_count:-parse_error}"
@@ -521,6 +529,7 @@ CACHE
   assert_file_exists "$TEST_CACHE_DIR/last-run.json" || ok=false
   assert_valid_json "$TEST_CACHE_DIR/last-run.json" || ok=false
 
+  # Open the cache file directly (not stdin), parse it, and print the value of the 'version' key.
   cache_version=$(python3 -c "import json; print(json.load(open('$TEST_CACHE_DIR/last-run.json'))['version'])" 2>/dev/null)
   if [[ "$cache_version" != "2" ]]; then
     fail "cache should be rewritten as version 2, got ${cache_version:-parse_error}"
@@ -549,11 +558,16 @@ setup_test "16. FULL output contains ---ANALYSIS--- with prd_hierarchy"
 
   analysis_json=$(echo "$stdout" | sed -n '/---ANALYSIS---/,/---END_ANALYSIS---/p' | grep -v '^---')
 
+  # Try to parse the ANALYSIS block as JSON. If it's not valid JSON the test fails immediately.
   if ! echo "$analysis_json" | python3 -c "import sys, json; json.load(sys.stdin)" 2>/dev/null; then
     fail "ANALYSIS section is not valid JSON"
     ok=false
   fi
 
+  # Parse the ANALYSIS JSON and verify the prd_hierarchy array has exactly the shape we expect:
+  # - exactly 1 PRD entry with prd_iid == 7
+  # - that PRD has 3 child issues
+  # - the completion block reports total=3, closed=2, percentage=66%
   if ! echo "$analysis_json" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
@@ -588,6 +602,9 @@ setup_test "17. Todoist tasks appear in FULL output with overdue/today/up_next"
 
   raw_data=$(echo "$stdout" | sed -n '/---RAW_DATA---/,/---END_RAW_DATA---/p' | grep -v '^---')
 
+  # Parse the RAW_DATA JSON, navigate to the 'todoist' key, and verify:
+  # - each bucket (overdue, today, up_next) has exactly 1 task
+  # - each task has the expected id from the fixture file
   if ! echo "$raw_data" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
@@ -622,6 +639,9 @@ setup_test "18. td failure → todoist_error in output, exit 0"
 
   raw_data=$(echo "$stdout" | sed -n '/---RAW_DATA---/,/---END_RAW_DATA---/p' | grep -v '^---')
 
+  # Parse the RAW_DATA JSON and verify that when td fails:
+  # - 'todoist_error' is present and non-null (the error message was captured)
+  # - 'todoist' itself is null (no stale data is emitted)
   if ! echo "$raw_data" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
@@ -652,7 +672,9 @@ setup_test "19. Todoist cached on NO_CHANGES (td fails second run)"
   assert_exit_code "$exit_code" "0" || ok=false
   assert_stdout_contains "$stdout" "MODE: NO_CHANGES" || ok=false
 
-  # Verify cache still has Todoist data
+  # Verify cache still has Todoist data.
+  # Opens the cache file directly (not stdin), navigates to snapshot.todoist,
+  # and checks that the three task buckets from the first run are still present.
   if ! python3 -c "
 import json
 data = json.load(open('$TEST_CACHE_DIR/last-run.json'))
@@ -709,11 +731,17 @@ setup_test "21. Issue tiering: Tier 2/3 assignment with priority boosts"
 
   analysis_json=$(echo "$stdout" | sed -n '/---ANALYSIS---/,/---END_ANALYSIS---/p' | grep -v '^---')
 
+  # Try to parse the ANALYSIS block as JSON. If it's not valid JSON the test fails immediately.
   if ! echo "$analysis_json" | python3 -c "import sys, json; json.load(sys.stdin)" 2>/dev/null; then
     fail "ANALYSIS section is not valid JSON"
     ok=false
   fi
 
+  # Parse the ANALYSIS JSON and verify the tier_2_issues and tier_3_issues arrays:
+  # - tier_2_issues: exactly 1 item — the issue from the near-complete (80%) workstream
+  # - tier_3_issues: exactly 3 items, sorted by priority label (p::1 first, then p::3, then none)
+  # - a p::1 priority issue must NOT appear in tier_2 (priority alone doesn't promote tiers)
+  # - all tier_3 items must have null workstream_completion and reason "remaining_by_value_age"
   if ! echo "$analysis_json" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
@@ -772,11 +800,17 @@ setup_test "22. Tier 1 MR ranking: changes_requested first, then by age"
 
   analysis_json=$(echo "$stdout" | sed -n '/---ANALYSIS---/,/---END_ANALYSIS---/p' | grep -v '^---')
 
+  # Try to parse the ANALYSIS block as JSON. If it's not valid JSON the test fails immediately.
   if ! echo "$analysis_json" | python3 -c "import sys, json; json.load(sys.stdin)" 2>/dev/null; then
     fail "ANALYSIS section is not valid JSON"
     ok=false
   fi
 
+  # Parse the ANALYSIS JSON and verify the tier_1_mrs array is sorted correctly:
+  # 1st: changes_requested + oldest age  →  MR 100 (470h)
+  # 2nd: changes_requested + newer age   →  MR 150 (254h)
+  # 3rd: awaiting_review                 →  MR 200
+  # 4th: approved                        →  MR 300
   if ! echo "$analysis_json" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
@@ -822,6 +856,10 @@ setup_test "23. Stale worktree detection in ANALYSIS"
 
   analysis_json=$(echo "$stdout" | sed -n '/---ANALYSIS---/,/---END_ANALYSIS---/p' | grep -v '^---')
 
+  # Parse the ANALYSIS JSON and verify the stale_worktrees array:
+  # - exactly 2 entries (worktree-one and worktree-two)
+  # - sorted alphabetically by path (sorted() in Python sorts strings A→Z)
+  # - both have reason "branch_merged" (their git branches have been merged into master)
   if ! echo "$analysis_json" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
@@ -854,6 +892,7 @@ setup_test "24. Recommendation string in ANALYSIS and cache"
 
   analysis_json=$(echo "$stdout" | sed -n '/---ANALYSIS---/,/---END_ANALYSIS---/p' | grep -v '^---')
 
+  # Parse the ANALYSIS JSON from stdin and check the 'recommendation' string is exactly right.
   if ! echo "$analysis_json" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
@@ -864,6 +903,9 @@ assert rec == 'Address review feedback on MR !100', f'wrong recommendation: {rec
     ok=false
   fi
 
+  # Open the cache file directly and verify the recommendation was written there too.
+  # data.get('recommendation') returns None if the key is missing, so the first assert
+  # catches both a missing key and an explicit null value.
   if ! python3 -c "
 import json
 data = json.load(open('$TEST_CACHE_DIR/last-run.json'))
@@ -891,7 +933,10 @@ setup_test "25. writeCache preserves report/recommendation across DELTA"
 - MR !100 needs review
 My recommendation: Focus on MR !100" 2>/dev/null
 
-  # Verify report is in cache before the second run
+  # Verify report is in cache before the second run.
+  # Opens the cache file directly and checks that --save-report wrote both
+  # the report text and the recommendation. Uses data.get() so a missing key
+  # and a null value are both caught by the 'is not None' check.
   if ! python3 -c "
 import json
 data = json.load(open('$TEST_CACHE_DIR/last-run.json'))
@@ -912,7 +957,10 @@ assert data.get('recommendation') is not None, 'recommendation should exist afte
   assert_exit_code "$exit_code" "0" || ok=false
   assert_stdout_contains "$stdout" "MODE: DELTA" || ok=false
 
-  # Verify report and recommendation survived writeCache
+  # Verify report and recommendation survived writeCache.
+  # After a DELTA run, writeCache rewrites the cache with fresh snapshot data.
+  # This checks that the previously saved report and recommendation strings
+  # were preserved rather than overwritten with null.
   if ! python3 -c "
 import json
 data = json.load(open('$TEST_CACHE_DIR/last-run.json'))
@@ -922,6 +970,66 @@ assert data.get('recommendation') is not None, 'recommendation was discarded by 
 assert 'Focus on MR !100' in data['recommendation'], 'recommendation content was corrupted'
 " 2>/dev/null; then
     fail "report/recommendation lost after DELTA writeCache"
+    ok=false
+  fi
+
+  $ok && pass
+)
+teardown_test
+
+# ── Test 26: reviewer_mrs + assigned_mrs in RAW_DATA and review_queue in ANALYSIS ──
+
+setup_test "26. Reviewer + assigned MRs in RAW_DATA and review_queue in ANALYSIS"
+(
+  stdout=$("$BINARY" 2>/dev/null)
+  exit_code=$?
+  ok=true
+
+  assert_exit_code "$exit_code" "0" || ok=false
+  assert_stdout_contains "$stdout" "MODE: FULL" || ok=false
+
+  raw_data=$(echo "$stdout" | sed -n '/---RAW_DATA---/,/---END_RAW_DATA---/p' | grep -v '^---')
+
+  # Parse the RAW_DATA JSON and check the two new cross-repo MR arrays:
+  # - reviewer_mrs: 1 item with iid=200 from the ai-coding-guide repo
+  # - assigned_mrs: 1 item with iid=300 from the studio repo
+  # Also verifies repo_path was extracted correctly from references.full in the fixture.
+  if ! echo "$raw_data" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+rev = data['reviewer_mrs']
+asgn = data['assigned_mrs']
+assert len(rev) == 1, f'expected 1 reviewer_mr, got {len(rev)}'
+assert rev[0]['iid'] == 200, f'reviewer_mr iid wrong: {rev[0][\"iid\"]}'
+assert rev[0]['repo_path'] == 'vistaprint-org/ai-engineering/ai-coding-guide', f'reviewer_mr repo_path wrong: {rev[0].get(\"repo_path\")}'
+assert len(asgn) == 1, f'expected 1 assigned_mr, got {len(asgn)}'
+assert asgn[0]['iid'] == 300, f'assigned_mr iid wrong: {asgn[0][\"iid\"]}'
+" 2>/dev/null; then
+    fail "reviewer_mrs or assigned_mrs content incorrect in RAW_DATA"
+    ok=false
+  fi
+
+  analysis_json=$(echo "$stdout" | sed -n '/---ANALYSIS---/,/---END_ANALYSIS---/p' | grep -v '^---')
+
+  # Parse the ANALYSIS JSON and verify the review_queue array:
+  # - exactly 2 items (one reviewer MR, one assignee MR)
+  # - builds a dict keyed by iid to look up each item's role and repo
+  #   e.g. roles = {200: 'reviewer', 300: 'assignee'}
+  # - checks that iid 200 has role='reviewer' and the correct repo path
+  # - checks that iid 300 has role='assignee' and the correct repo path
+  if ! echo "$analysis_json" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+rq = data['review_queue']
+assert len(rq) == 2, f'expected 2 review_queue items, got {len(rq)}'
+roles = {item['iid']: item['role'] for item in rq}
+assert roles[200] == 'reviewer', f'iid 200 role wrong: {roles[200]}'
+assert roles[300] == 'assignee', f'iid 300 role wrong: {roles[300]}'
+repos = {item['iid']: item['repo'] for item in rq}
+assert repos[200] == 'vistaprint-org/ai-engineering/ai-coding-guide', f'iid 200 repo wrong: {repos[200]}'
+assert repos[300] == 'vistaprint-org/design-technology/studio/studio', f'iid 300 repo wrong: {repos[300]}'
+" 2>/dev/null; then
+    fail "review_queue content incorrect in ANALYSIS"
     ok=false
   fi
 
