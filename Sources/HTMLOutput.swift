@@ -280,7 +280,9 @@ private func appendMarkdownLine(_ line: String, to html: inout [String], inList:
         closeListIfNeeded(&html, inList: &inList)
         html.append("<h4>\(inlineMarkdown(String(line.dropFirst(4))))</h4>")
     } else if line.hasPrefix("- ") || line.hasPrefix("* ") {
-        if !inList { html.append("<ul>"); inList = true }
+        if !inList {
+            html.append("<ul>"); inList = true
+        }
         html.append("<li>\(inlineMarkdown(String(line.dropFirst(2))))</li>")
     } else if line.trimmingCharacters(in: .whitespaces).isEmpty {
         closeListIfNeeded(&html, inList: &inList)
