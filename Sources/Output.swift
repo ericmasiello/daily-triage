@@ -15,8 +15,7 @@ func formatFull(reason: String, snapshot: Snapshot, serviceLines: [String]) -> S
     encoder.outputFormatting = [.sortedKeys]
     encoder.keyEncodingStrategy = .convertToSnakeCase
     if let jsonData = try? encoder.encode(snapshot),
-       let jsonString = String(data: jsonData, encoding: .utf8)
-    {
+       let jsonString = String(data: jsonData, encoding: .utf8) {
         lines.append(jsonString)
     }
     lines.append("---END_RAW_DATA---")

@@ -128,8 +128,7 @@ struct GitLabService: DataSourceService {
         encoder.outputFormatting = [.sortedKeys]
         encoder.keyEncodingStrategy = .convertToSnakeCase
         if let data = try? encoder.encode(analysis),
-           let str = String(data: data, encoding: .utf8)
-        {
+           let str = String(data: data, encoding: .utf8) {
             lines.append(str)
         }
         lines.append("---END_ANALYSIS---")
@@ -724,8 +723,7 @@ private func computeRecommendationString(
     }
     if let issue = tier2.first {
         let prdTitle: String = if let prdIid = childToPRDIid[issue.iid],
-                                  let prd = issuesByIID[prdIid]
-        {
+                                  let prd = issuesByIID[prdIid] {
             prd.title
         } else {
             "work stream"

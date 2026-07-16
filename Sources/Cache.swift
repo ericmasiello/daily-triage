@@ -128,8 +128,7 @@ func determineReason(config: Config) -> String {
         return "cache_corrupt"
     }
     if let date = ISO8601DateFormatter().date(from: cache.timestamp),
-       Date().timeIntervalSince(date) > config.ttlSeconds
-    {
+       Date().timeIntervalSince(date) > config.ttlSeconds {
         return "cache_expired"
     }
     return "cache_valid"
