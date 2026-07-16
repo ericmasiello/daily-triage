@@ -937,8 +937,14 @@ printf "\n${BOLD}Static analysis:${RESET}\n"
 
 if command -v swiftformat &>/dev/null; then
   printf "  ${BOLD}swiftformat${RESET} ... "
-  swiftformat "$REPO_DIR/Sources/" 2>/dev/null
-  if git -C "$REPO_DIR" diff --exit-code Sources/ >/dev/null 2>&1; then
+  fmt_exit=0
+  swiftformat "$REPO_DIR/Sources/" 2>/tmp/swiftformat-err.txt || fmt_exit=$?
+  if [[ $fmt_exit -ne 0 ]]; then
+    printf "${RED}FAIL${RESET}\n"
+    printf "    ${RED}→ swiftformat exited $fmt_exit:${RESET}\n"
+    cat /tmp/swiftformat-err.txt | sed 's/^/    /'
+    STATIC_FAILED=true
+  elif git -C "$REPO_DIR" diff --exit-code Sources/ >/dev/null 2>&1; then
     printf "${GREEN}PASS${RESET}\n"
   else
     printf "${RED}FAIL${RESET}\n"

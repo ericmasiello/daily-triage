@@ -28,6 +28,7 @@ jobs:
 
       - name: Format check
         run: |
+          swiftformat --version
           swiftformat Sources/
           git diff --exit-code Sources/
 
