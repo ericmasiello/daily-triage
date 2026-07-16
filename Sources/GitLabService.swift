@@ -18,7 +18,7 @@ struct GitLabService: DataSourceService {
     private(set) var fetchedState: State?
     private(set) var issueDescriptions: [Int: String] = [:]
     private(set) var allIssues: [Issue] = []
-    private(set) var referenceDate: Date = Date()
+    private(set) var referenceDate: Date = .init()
 
     // MARK: - Protocol: fetch
 
@@ -33,28 +33,28 @@ struct GitLabService: DataSourceService {
 
         let outputs = await fetchAllGitLab(config: config, shell: shell)
 
-        var nonDraftMRs:   [MR] = []
-        var draftMRs:      [MR] = []
+        var nonDraftMRs: [MR] = []
+        var draftMRs: [MR] = []
         var sandcastleMRs: [MR] = []
-        var issuesList:    [Issue] = []
+        var issuesList: [Issue] = []
         var allIssuesList: [Issue] = []
-        var descriptions:  [Int: String] = [:]
+        var descriptions: [Int: String] = [:]
         var worktreesList: [String] = []
         var mergedBranchesList: [String] = []
         var errors: [String] = []
 
         for output in outputs {
             switch output {
-            case .nonDraftMRs(let mrs):   nonDraftMRs = mrs
-            case .draftMRs(let mrs):      draftMRs = mrs
-            case .sandcastleMRs(let mrs): sandcastleMRs = mrs
-            case .issues(let open, let descs, let all):
+            case let .nonDraftMRs(mrs): nonDraftMRs = mrs
+            case let .draftMRs(mrs): draftMRs = mrs
+            case let .sandcastleMRs(mrs): sandcastleMRs = mrs
+            case let .issues(open, descs, all):
                 issuesList = open
                 descriptions = descs
                 allIssuesList = all
-            case .worktrees(let dirs):    worktreesList = dirs
-            case .mergedBranches(let b):  mergedBranchesList = b
-            case .failed(let desc):       errors.append(desc)
+            case let .worktrees(dirs): worktreesList = dirs
+            case let .mergedBranches(b): mergedBranchesList = b
+            case let .failed(desc): errors.append(desc)
             }
         }
 
@@ -95,13 +95,19 @@ struct GitLabService: DataSourceService {
         diffMRs(&changes, label: "MR", cached: old.nonDraftMrs, fresh: new.nonDraftMrs)
         diffMRs(&changes, label: "Draft MR", cached: old.draftMrs, fresh: new.draftMrs)
         diffMRs(&changes, label: "Sandcastle MR", cached: old.sandcastleMrs, fresh: new.sandcastleMrs)
-        diffIssues(&changes, hasPriorityChange: &hasPriorityChange,
-                   cached: old.issues, fresh: new.issues)
+        diffIssues(
+            &changes,
+            hasPriorityChange: &hasPriorityChange,
+            cached: old.issues,
+            fresh: new.issues
+        )
         diffStringSet(&changes, label: "Worktree", cached: old.worktrees, fresh: new.worktrees)
         diffStringSet(&changes, label: "Merged branch", cached: old.mergedBranches, fresh: new.mergedBranches)
 
         var signals: [DiffSignal] = []
-        if hasPriorityChange { signals.append(.priorityChange) }
+        if hasPriorityChange {
+            signals.append(.priorityChange)
+        }
 
         return (changes, signals)
     }
@@ -147,8 +153,8 @@ enum GitLabFetchError: Error, CustomStringConvertible {
 
     var description: String {
         switch self {
-        case .tooManyFailures(let errors):
-            return "all GitLab data sources failed: \(errors.joined(separator: ", "))"
+        case let .tooManyFailures(errors):
+            "all GitLab data sources failed: \(errors.joined(separator: ", "))"
         }
     }
 }
@@ -199,7 +205,7 @@ private func mapRawMR(_ raw: RawMR) -> MR {
         detailedMergeStatus: raw.detailedMergeStatus,
         userNotesCount: raw.userNotesCount,
         hasConflicts: raw.hasConflicts,
-        reviewerUsernames: raw.reviewers?.map { $0.username }
+        reviewerUsernames: raw.reviewers?.map(\.username)
     )
 }
 
@@ -254,22 +260,34 @@ private func fetchSource(
 private func fetchAllGitLab(config: Config, shell: @escaping ShellRunner) async -> [FetchOutput] {
     await withTaskGroup(of: FetchOutput.self) { group in
         group.addTask {
-            fetchSource("glab mr list --author=\(config.triageAuthor) --not-draft -F json --per-page 50",
-                        dir: config.studioDir, label: "non-draft MRs", runShell: shell) { out in
+            fetchSource(
+                "glab mr list --author=\(config.triageAuthor) --not-draft -F json --per-page 50",
+                dir: config.studioDir,
+                label: "non-draft MRs",
+                runShell: shell
+            ) { out in
                 .nonDraftMRs((decodeArray(out) as [RawMR]).map { mapRawMR($0) })
             }
         }
 
         group.addTask {
-            fetchSource("glab mr list --author=\(config.triageAuthor) --draft -F json --per-page 50",
-                        dir: config.studioDir, label: "draft MRs", runShell: shell) { out in
+            fetchSource(
+                "glab mr list --author=\(config.triageAuthor) --draft -F json --per-page 50",
+                dir: config.studioDir,
+                label: "draft MRs",
+                runShell: shell
+            ) { out in
                 .draftMRs((decodeArray(out) as [RawMR]).map { mapRawMR($0) })
             }
         }
 
         group.addTask {
-            fetchSource("glab mr list --author=\(config.triageAuthor) -F json --per-page 50 --repo ericmasiello/sandcastle-studio",
-                        dir: config.studioDir, label: "sandcastle MRs", runShell: shell) { out in
+            fetchSource(
+                "glab mr list --author=\(config.triageAuthor) -F json --per-page 50 --repo ericmasiello/sandcastle-studio",
+                dir: config.studioDir,
+                label: "sandcastle MRs",
+                runShell: shell
+            ) { out in
                 .sandcastleMRs((decodeArray(out) as [RawMR]).map { mapRawMR($0) })
             }
         }
@@ -302,11 +320,16 @@ private func fetchAllGitLab(config: Config, shell: @escaping ShellRunner) async 
 
         group.addTask {
             let rawDefault = (try? shell(
-                "git -C '\(config.studioDir)' symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@'", nil)) ?? ""
+                "git -C '\(config.studioDir)' symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@'",
+                nil
+            )) ?? ""
             let defaultBranch = rawDefault.trimmingCharacters(in: .whitespacesAndNewlines)
             let branch = defaultBranch.isEmpty ? "master" : defaultBranch
 
-            let branchOut = (try? shell("git -C '\(config.studioDir)' branch -r --merged '\(branch)' 2>/dev/null", nil)) ?? ""
+            let branchOut = (try? shell(
+                "git -C '\(config.studioDir)' branch -r --merged '\(branch)' 2>/dev/null",
+                nil
+            )) ?? ""
             let branches = branchOut
                 .components(separatedBy: "\n")
                 .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -345,25 +368,33 @@ private func diffMRs(_ changes: inout [String], label: String, cached: [MR], fre
 
         if old.detailedMergeStatus != new.detailedMergeStatus {
             changes.append(
-                "\(label) !\(iid): detailed_merge_status changed \(old.detailedMergeStatus ?? "null") → \(new.detailedMergeStatus ?? "null")")
+                "\(label) !\(iid): detailed_merge_status changed \(old.detailedMergeStatus ?? "null") → \(new.detailedMergeStatus ?? "null")"
+            )
         }
         if old.hasConflicts != new.hasConflicts {
             changes.append(
-                "\(label) !\(iid): has_conflicts changed \(describeOptional(old.hasConflicts)) → \(describeOptional(new.hasConflicts))")
+                "\(label) !\(iid): has_conflicts changed \(describeOptional(old.hasConflicts)) → \(describeOptional(new.hasConflicts))"
+            )
         }
         if old.userNotesCount != new.userNotesCount {
             changes.append(
-                "\(label) !\(iid): user_notes_count changed \(describeOptional(old.userNotesCount)) → \(describeOptional(new.userNotesCount))")
+                "\(label) !\(iid): user_notes_count changed \(describeOptional(old.userNotesCount)) → \(describeOptional(new.userNotesCount))"
+            )
         }
         if old.labels != new.labels {
             changes.append(
-                "\(label) !\(iid): labels changed [\(old.labels.joined(separator: ", "))] → [\(new.labels.joined(separator: ", "))]")
+                "\(label) !\(iid): labels changed [\(old.labels.joined(separator: ", "))] → [\(new.labels.joined(separator: ", "))]"
+            )
         }
     }
 }
 
-private func diffIssues(_ changes: inout [String], hasPriorityChange: inout Bool,
-                        cached: [Issue], fresh: [Issue]) {
+private func diffIssues(
+    _ changes: inout [String],
+    hasPriorityChange: inout Bool,
+    cached: [Issue],
+    fresh: [Issue]
+) {
     let cachedByIID = Dictionary(cached.map { ($0.iid, $0) }, uniquingKeysWith: { _, b in b })
     let freshByIID = Dictionary(fresh.map { ($0.iid, $0) }, uniquingKeysWith: { _, b in b })
 
@@ -394,8 +425,12 @@ private func diffIssues(_ changes: inout [String], hasPriorityChange: inout Bool
             }
 
             var parts: [String] = []
-            if !added.isEmpty { parts.append("added \(added.sorted().joined(separator: ", "))") }
-            if !removed.isEmpty { parts.append("removed \(removed.sorted().joined(separator: ", "))") }
+            if !added.isEmpty {
+                parts.append("added \(added.sorted().joined(separator: ", "))")
+            }
+            if !removed.isEmpty {
+                parts.append("removed \(removed.sorted().joined(separator: ", "))")
+            }
             changes.append("Issue #\(iid): labels \(parts.joined(separator: "; "))")
         }
     }
@@ -412,8 +447,12 @@ private func diffIssues(_ changes: inout [String], hasPriorityChange: inout Bool
     }
 }
 
-private func diffStringSet(_ changes: inout [String], label: String,
-                            cached: [String], fresh: [String]) {
+private func diffStringSet(
+    _ changes: inout [String],
+    label: String,
+    cached: [String],
+    fresh: [String]
+) {
     let cachedSet = Set(cached)
     let freshSet = Set(fresh)
 
@@ -425,8 +464,8 @@ private func diffStringSet(_ changes: inout [String], label: String,
     }
 }
 
-private func describeOptional<T>(_ value: T?) -> String {
-    guard let value = value else { return "null" }
+private func describeOptional(_ value: (some Any)?) -> String {
+    guard let value else { return "null" }
     return "\(value)"
 }
 
@@ -488,7 +527,12 @@ private struct CompletionInfo: Codable {
     let percentage: Int
 }
 
-private func computeAnalysis(snapshot: Snapshot, issueDescriptions: [Int: String], allIssues: [Issue], referenceDate: Date) -> AnalysisResult {
+private func computeAnalysis(
+    snapshot: Snapshot,
+    issueDescriptions: [Int: String],
+    allIssues: [Issue],
+    referenceDate: Date
+) -> AnalysisResult {
     let issuesByIID = Dictionary(
         allIssues.map { ($0.iid, $0) },
         uniquingKeysWith: { _, b in b }
@@ -509,11 +553,10 @@ private func computeAnalysis(snapshot: Snapshot, issueDescriptions: [Int: String
         let title = issuesByIID[prdIID]?.title ?? "Unknown issue #\(prdIID)"
 
         let children: [ChildInfo] = childIIDs.map { childIID in
-            let state: String
-            if let issue = issuesByIID[childIID] {
-                state = issue.state ?? "opened"
+            let state: String = if let issue = issuesByIID[childIID] {
+                issue.state ?? "opened"
             } else {
-                state = "closed"
+                "closed"
             }
             return ChildInfo(iid: childIID, state: state)
         }
@@ -531,6 +574,7 @@ private func computeAnalysis(snapshot: Snapshot, issueDescriptions: [Int: String
     }
 
     // MARK: Tiering — child IID → best (highest) workstream completion %
+
     var childToCompletion: [Int: Int] = [:]
     var childToPRDIid: [Int: Int] = [:]
     for entry in entries {
@@ -543,7 +587,7 @@ private func computeAnalysis(snapshot: Snapshot, issueDescriptions: [Int: String
         }
     }
 
-    let prdIIDs = Set(entries.map { $0.prdIid })
+    let prdIIDs = Set(entries.map(\.prdIid))
 
     let openIssues = snapshot.issues
 
@@ -551,7 +595,9 @@ private func computeAnalysis(snapshot: Snapshot, issueDescriptions: [Int: String
     var tier3: [TierIssue] = []
 
     for issue in openIssues {
-        if prdIIDs.contains(issue.iid) { continue }
+        if prdIIDs.contains(issue.iid) {
+            continue
+        }
 
         let priority = issue.labels.first(where: { $0.hasPrefix("p::") })
 
@@ -577,7 +623,9 @@ private func computeAnalysis(snapshot: Snapshot, issueDescriptions: [Int: String
     let sortTier = { (a: TierIssue, b: TierIssue) -> Bool in
         let rankA = priorityRank(a.priority)
         let rankB = priorityRank(b.priority)
-        if rankA != rankB { return rankA < rankB }
+        if rankA != rankB {
+            return rankA < rankB
+        }
         return a.iid < b.iid
     }
 
@@ -585,14 +633,14 @@ private func computeAnalysis(snapshot: Snapshot, issueDescriptions: [Int: String
     tier3.sort(by: sortTier)
 
     // MARK: Tier 1 — MR ranking
+
     let isoFormatter = ISO8601DateFormatter()
     var tier1: [Tier1MR] = snapshot.nonDraftMrs.map { mr in
         let status = reviewStatus(for: mr)
-        let ageHours: Int
-        if let created = mr.createdAt, let createdDate = isoFormatter.date(from: created) {
-            ageHours = max(0, Int(referenceDate.timeIntervalSince(createdDate) / 3600))
+        let ageHours: Int = if let created = mr.createdAt, let createdDate = isoFormatter.date(from: created) {
+            max(0, Int(referenceDate.timeIntervalSince(createdDate) / 3600))
         } else {
-            ageHours = 0
+            0
         }
         return Tier1MR(iid: mr.iid, title: mr.title, reviewStatus: status, ageHours: ageHours)
     }
@@ -600,11 +648,14 @@ private func computeAnalysis(snapshot: Snapshot, issueDescriptions: [Int: String
     tier1.sort { a, b in
         let rankA = reviewStatusRank(a.reviewStatus)
         let rankB = reviewStatusRank(b.reviewStatus)
-        if rankA != rankB { return rankA < rankB }
+        if rankA != rankB {
+            return rankA < rankB
+        }
         return a.ageHours > b.ageHours
     }
 
     // MARK: Stale worktrees
+
     let mergedBranchShortNames = Set(snapshot.mergedBranches.compactMap { branch -> String? in
         branch.split(separator: "/", maxSplits: 1).last.map(String.init)
     })
@@ -614,6 +665,7 @@ private func computeAnalysis(snapshot: Snapshot, issueDescriptions: [Int: String
         .map { StaleWorktree(path: $0, reason: "branch_merged") }
 
     // MARK: Recommendation
+
     let recommendation = computeRecommendationString(
         tier1: tier1,
         tier2: tier2,
@@ -637,17 +689,21 @@ private func computeAnalysis(snapshot: Snapshot, issueDescriptions: [Int: String
 
 private func reviewStatus(for mr: MR) -> String {
     let approved = mr.detailedMergeStatus == "approved" || mr.detailedMergeStatus == "mergeable"
-    if approved { return "approved" }
-    if (mr.userNotesCount ?? 0) > 0 { return "changes_requested" }
+    if approved {
+        return "approved"
+    }
+    if (mr.userNotesCount ?? 0) > 0 {
+        return "changes_requested"
+    }
     return "awaiting_review"
 }
 
 private func reviewStatusRank(_ status: String) -> Int {
     switch status {
-    case "changes_requested": return 0
-    case "awaiting_review":   return 1
-    case "approved":          return 2
-    default:                  return 3
+    case "changes_requested": 0
+    case "awaiting_review": 1
+    case "approved": 2
+    default: 3
     }
 }
 
@@ -655,7 +711,7 @@ private func computeRecommendationString(
     tier1: [Tier1MR],
     tier2: [TierIssue],
     tier3: [TierIssue],
-    entries: [PRDHierarchyEntry],
+    entries _: [PRDHierarchyEntry],
     childToPRDIid: [Int: Int],
     issuesByIID: [Int: Issue]
 ) -> String {
@@ -666,12 +722,11 @@ private func computeRecommendationString(
         return "Follow up on MR !\(mr.iid) review"
     }
     if let issue = tier2.first {
-        let prdTitle: String
-        if let prdIid = childToPRDIid[issue.iid],
-           let prd = issuesByIID[prdIid] {
-            prdTitle = prd.title
+        let prdTitle: String = if let prdIid = childToPRDIid[issue.iid],
+                                  let prd = issuesByIID[prdIid] {
+            prd.title
         } else {
-            prdTitle = "work stream"
+            "work stream"
         }
         let pct = issue.workstreamCompletion ?? 0
         return "Complete near-done work stream: \(prdTitle) (\(pct)%)"
@@ -684,10 +739,10 @@ private func computeRecommendationString(
 
 private func priorityRank(_ label: String?) -> Int {
     switch label {
-    case "p::1": return 0
-    case "p::2": return 1
-    case "p::3": return 2
-    default:     return 3
+    case "p::1": 0
+    case "p::2": 1
+    case "p::3": 2
+    default: 3
     }
 }
 
@@ -750,7 +805,7 @@ private func extractAllIIDs(from text: String) -> [Int] {
                 while end < text.endIndex && text[end].isNumber {
                     end = text.index(after: end)
                 }
-                if end > afterHash, let iid = Int(text[afterHash..<end]) {
+                if end > afterHash, let iid = Int(text[afterHash ..< end]) {
                     results.append(iid)
                     i = end
                     continue
@@ -769,5 +824,5 @@ private func parseLeadingInt(_ s: String) -> Int? {
         end = s.index(after: end)
     }
     guard end > s.startIndex else { return nil }
-    return Int(s[s.startIndex..<end])
+    return Int(s[s.startIndex ..< end])
 }

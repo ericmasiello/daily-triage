@@ -18,13 +18,21 @@ swiftc -parse-as-library Sources/*.swift -o triage-cache
 
 The binary is `.gitignore`d. Always rebuild after source changes.
 
-## Tests
+## Validation
+
+Before pushing any change, all three checks must pass. Run them in a loop until clean:
 
 ```bash
-./tests/run-all.sh
+swiftformat Sources/       # auto-fix formatting
+swiftlint lint --lenient Sources/  # lint (warnings allowed, errors fail)
+./tests/run-all.sh         # build + 25 integration tests + format check
 ```
 
-Shell-based integration suite (16 tests). The test runner builds the binary first, so you don't need a separate build step. Tests use mock `glab` and `git` scripts in `tests/mocks/` that read fixture JSON from `tests/fixtures/`. Five fixture sets: `default`, `changed-mr`, `priority-changed`, `many-branches`, `analysis-hierarchy`.
+`./tests/run-all.sh` runs `swiftformat` and `swiftlint --lenient` internally as well, so a clean `run-all.sh` means all three pass. Iterate — fix any failures, then re-run — until the script exits 0.
+
+**SwiftLint requires full Xcode** (not just Command Line Tools). If `swiftlint` crashes with a `sourcekitdInProc` error, run `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` to point the toolchain at Xcode.
+
+Shell-based integration suite (25 tests). The test runner builds the binary first, so you don't need a separate build step. Tests use mock `glab` and `git` scripts in `tests/mocks/` that read fixture JSON from `tests/fixtures/`. Five fixture sets: `default`, `changed-mr`, `priority-changed`, `many-branches`, `analysis-hierarchy`.
 
 **Environment variables for test isolation:**
 - `TRIAGE_CACHE_DIR` — overrides `~/.cache/eric-triage`

@@ -929,6 +929,56 @@ assert 'Focus on MR !100' in data['recommendation'], 'recommendation content was
 )
 teardown_test
 
+# ── Lint & format checks ─────────────────────────────────────────────────────
+
+STATIC_FAILED=false
+
+printf "\n${BOLD}Static analysis:${RESET}\n"
+
+if command -v swiftformat &>/dev/null; then
+  printf "  ${BOLD}swiftformat${RESET} ... "
+  fmt_exit=0
+  swiftformat "$REPO_DIR/Sources/" 2>/tmp/swiftformat-err.txt || fmt_exit=$?
+  if [[ $fmt_exit -ne 0 ]]; then
+    printf "${RED}FAIL${RESET}\n"
+    printf "    ${RED}→ swiftformat exited $fmt_exit:${RESET}\n"
+    cat /tmp/swiftformat-err.txt | sed 's/^/    /'
+    STATIC_FAILED=true
+  elif git -C "$REPO_DIR" diff --exit-code Sources/ >/dev/null 2>&1; then
+    printf "${GREEN}PASS${RESET}\n"
+  else
+    printf "${RED}FAIL${RESET}\n"
+    printf "    ${RED}→ swiftformat modified files; review and commit the changes${RESET}\n"
+    git -C "$REPO_DIR" diff --stat Sources/ 2>/dev/null | sed 's/^/    /'
+    STATIC_FAILED=true
+  fi
+else
+  printf "  ${BOLD}swiftformat${RESET} ... ${RED}not installed${RESET} (run: brew bundle)\n"
+  STATIC_FAILED=true
+fi
+
+if command -v swiftlint &>/dev/null; then
+  printf "  ${BOLD}swiftlint lint${RESET} ... "
+  lint_tmpout="$(mktemp)"
+  lint_exit=0
+  (set +e; swiftlint lint --quiet --lenient "$REPO_DIR/Sources/" >"$lint_tmpout" 2>&1; exit $?) 2>/dev/null || lint_exit=$?
+  lint_output="$(cat "$lint_tmpout")"
+  rm -f "$lint_tmpout"
+  if [[ $lint_exit -eq 133 ]] || echo "$lint_output" | grep -q "sourcekitdInProc"; then
+    printf "${BOLD}SKIP${RESET} (requires full Xcode — CLT only)\n"
+  elif [[ $lint_exit -eq 0 ]]; then
+    printf "${GREEN}PASS${RESET}\n"
+  else
+    printf "${RED}FAIL${RESET}\n"
+    echo "$lint_output" | head -10 | sed 's/^/    /'
+    printf "    ${RED}→ Run: swiftlint lint Sources/${RESET}\n"
+    STATIC_FAILED=true
+  fi
+else
+  printf "  ${BOLD}swiftlint${RESET} ... ${RED}not installed${RESET} (run: brew bundle)\n"
+  STATIC_FAILED=true
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 
 PASSED=0
@@ -943,7 +993,7 @@ rm -rf "$RESULT_DIR"
 
 printf "\n${BOLD}Results: ${GREEN}%d passed${RESET}, ${RED}%d failed${RESET} out of %d\n\n" "$PASSED" "$FAILED" "$TOTAL"
 
-if [[ "$FAILED" -gt 0 ]]; then
+if [[ "$FAILED" -gt 0 ]] || [[ "$STATIC_FAILED" == "true" ]]; then
   exit 1
 fi
 exit 0

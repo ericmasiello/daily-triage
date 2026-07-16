@@ -5,6 +5,7 @@ struct TriageCache {
     static func main() async {
         let config = Config.fromEnvironment()
         let args = CommandLine.arguments
+        let outputOptions = OutputOptions.parse(from: args)
 
         if let idx = args.firstIndex(of: "--save-report") {
             guard idx + 1 < args.count else {
@@ -59,7 +60,11 @@ struct TriageCache {
             let snapshot = assembleSnapshot(gitlab: gitlabService, todoist: todoistService)
             let serviceLines = collectServiceLines([gitlabService, todoistService], snapshot: snapshot)
             let recommendation = gitlabService.computeRecommendation(snapshot: snapshot)
-            print(formatFull(reason: "forced", snapshot: snapshot, serviceLines: serviceLines))
+            emit(
+                formatFull(reason: "forced", snapshot: snapshot, serviceLines: serviceLines),
+                options: outputOptions,
+                config: config
+            )
             writeCache(snapshot: snapshot, recommendation: recommendation, config: config)
             exit(0)
         }
@@ -70,7 +75,11 @@ struct TriageCache {
             let snapshot = assembleSnapshot(gitlab: gitlabService, todoist: todoistService)
             let serviceLines = collectServiceLines([gitlabService, todoistService], snapshot: snapshot)
             let recommendation = gitlabService.computeRecommendation(snapshot: snapshot)
-            print(formatFull(reason: reason, snapshot: snapshot, serviceLines: serviceLines))
+            emit(
+                formatFull(reason: reason, snapshot: snapshot, serviceLines: serviceLines),
+                options: outputOptions,
+                config: config
+            )
             writeCache(snapshot: snapshot, recommendation: recommendation, config: config)
             exit(0)
         }
@@ -94,13 +103,30 @@ struct TriageCache {
         if diff.signals.contains(.priorityChange) {
             let serviceLines = collectServiceLines(services, snapshot: snapshot)
             let recommendation = gitlabService.computeRecommendation(snapshot: snapshot)
-            print(formatFull(reason: "priority_labels_changed", snapshot: snapshot, serviceLines: serviceLines))
+            emit(
+                formatFull(reason: "priority_labels_changed", snapshot: snapshot, serviceLines: serviceLines),
+                options: outputOptions,
+                config: config
+            )
             writeCache(snapshot: snapshot, recommendation: recommendation, config: config)
         } else if diff.isEmpty {
-            print(formatNoChanges(ageMinutes: ageMinutes, report: cache.report, recommendation: cache.recommendation))
+            emit(
+                formatNoChanges(ageMinutes: ageMinutes, report: cache.report, recommendation: cache.recommendation),
+                options: outputOptions,
+                config: config
+            )
         } else {
             let recommendation = gitlabService.computeRecommendation(snapshot: snapshot)
-            print(formatDelta(ageMinutes: ageMinutes, diff: diff, report: cache.report, recommendation: cache.recommendation))
+            emit(
+                formatDelta(
+                    ageMinutes: ageMinutes,
+                    diff: diff,
+                    report: cache.report,
+                    recommendation: cache.recommendation
+                ),
+                options: outputOptions,
+                config: config
+            )
             writeCache(snapshot: snapshot, recommendation: recommendation, config: config)
         }
     }
@@ -108,7 +134,11 @@ struct TriageCache {
 
 // MARK: - Fetch helpers
 
-private func fetchService<S: DataSourceService>(_ service: S, config: Config, shell: @escaping ShellRunner) async -> (S, Error?) {
+private func fetchService<S: DataSourceService>(
+    _ service: S,
+    config: Config,
+    shell: @escaping ShellRunner
+) async -> (S, Error?) {
     var svc = service
     do {
         try await svc.fetch(config: config, shell: shell)
@@ -132,4 +162,23 @@ private func assembleSnapshot(gitlab: GitLabService, todoist: TodoistService) ->
 
 private func collectServiceLines(_ services: [any DataSourceService], snapshot: Snapshot) -> [String] {
     services.flatMap { $0.format(snapshot) }
+}
+
+// MARK: - Output emission
+
+private func emit(_ text: String, options: OutputOptions, config: Config) {
+    if options.formats.contains(.md) {
+        print(text)
+    }
+    if options.formats.contains(.html) {
+        do {
+            let path = try writeHTMLReport(text, config: config)
+            fputs("HTML report: \(path)\n", stderr)
+            if options.autoOpen == .html {
+                openHTML(path: path)
+            }
+        } catch {
+            fputs("Warning: failed to write HTML report — \(error)\n", stderr)
+        }
+    }
 }
