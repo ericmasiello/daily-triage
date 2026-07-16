@@ -27,7 +27,7 @@ Compiles in ~1s. No SPM, no Package.swift, no external dependencies.
 ## Run
 
 ```bash
-# Standard run — fetches data, outputs MODE: FULL, writes cache
+# Standard run — fetches data, outputs markdown to stdout, writes cache
 ./triage-cache
 
 # Bypass cache entirely — always runs FULL mode
@@ -36,6 +36,26 @@ Compiles in ~1s. No SPM, no Package.swift, no external dependencies.
 # Save an LLM-generated report to the cache
 ./triage-cache --save-report "<markdown report>"
 ```
+
+### Output formats
+
+By default the binary writes markdown to stdout. Use `--format` to select one or both output formats:
+
+```bash
+# HTML only — writes ~/.cache/eric-triage/report.html
+./triage-cache --format html
+
+# Both markdown (stdout) and HTML (file)
+./triage-cache --format md,html
+
+# HTML only, auto-open in browser after writing
+./triage-cache --format html --open html
+
+# Combine with other flags
+./triage-cache --force --format md,html --open html
+```
+
+The HTML path is always `~/.cache/eric-triage/report.html`. When using `--format md,html` the HTML path is printed to stderr so it doesn't pollute stdout.
 
 ## Output Format
 
