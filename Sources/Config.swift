@@ -1,8 +1,50 @@
 import Foundation
 
+// MARK: - Output format selection
+
+enum OutputFormat: String, CaseIterable {
+    case md
+    case html
+}
+
+/// Parsed from --format md,html (default: md only)
+struct OutputOptions {
+    var formats: Set<OutputFormat>
+    /// Which format to auto-open after writing, if any
+    var autoOpen: OutputFormat?
+
+    /// Parse from CommandLine.arguments.
+    /// --format md            → markdown only (stdout)
+    /// --format html          → HTML only (file)
+    /// --format md,html       → both
+    /// --open html            → open the HTML file after writing
+    static func parse(from args: [String]) -> OutputOptions {
+        var formats: Set<OutputFormat> = [.md]
+        var autoOpen: OutputFormat? = nil
+
+        if let formatFlagIndex = args.firstIndex(of: "--format"), formatFlagIndex + 1 < args.count {
+            let rawFormats = args[formatFlagIndex + 1].split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            let parsed = rawFormats.compactMap { OutputFormat(rawValue: $0.lowercased()) }
+            if !parsed.isEmpty {
+                formats = Set(parsed)
+            }
+        }
+
+        if let openFlagIndex = args.firstIndex(of: "--open"), openFlagIndex + 1 < args.count {
+            let rawFormat = args[openFlagIndex + 1].trimmingCharacters(in: .whitespaces).lowercased()
+            if let fmt = OutputFormat(rawValue: rawFormat), formats.contains(fmt) {
+                autoOpen = fmt
+            }
+        }
+
+        return OutputOptions(formats: formats, autoOpen: autoOpen)
+    }
+}
+
 struct Config {
     let cacheDir: String
     let cachePath: String
+    let htmlPath: String
     let studioDir: String
     let ttlSeconds: TimeInterval
     let triageAuthor: String
@@ -36,6 +78,7 @@ struct Config {
         return Config(
             cacheDir: cacheDir,
             cachePath: (cacheDir as NSString).appendingPathComponent("last-run.json"),
+            htmlPath: (cacheDir as NSString).appendingPathComponent("report.html"),
             studioDir: studioDir,
             ttlSeconds: 3600,
             triageAuthor: ProcessInfo.processInfo.environment["TRIAGE_AUTHOR"] ?? "ericmasiello",
