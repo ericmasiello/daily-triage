@@ -67,14 +67,14 @@ struct Snapshot: Codable {
     }
 
     init(gitlab: GitLabService.State, todoist: TodoistService.State?, todoistError: String?) {
-        self.nonDraftMrs = gitlab.nonDraftMrs
-        self.draftMrs = gitlab.draftMrs
-        self.sandcastleMrs = gitlab.sandcastleMrs
-        self.reviewerMrs = gitlab.reviewerMrs
-        self.assignedMrs = gitlab.assignedMrs
-        self.issues = gitlab.issues
-        self.worktrees = gitlab.worktrees
-        self.mergedBranches = gitlab.mergedBranches
+        nonDraftMrs = gitlab.nonDraftMrs
+        draftMrs = gitlab.draftMrs
+        sandcastleMrs = gitlab.sandcastleMrs
+        reviewerMrs = gitlab.reviewerMrs
+        assignedMrs = gitlab.assignedMrs
+        issues = gitlab.issues
+        worktrees = gitlab.worktrees
+        mergedBranches = gitlab.mergedBranches
         self.todoist = todoist
         self.todoistError = todoistError
     }

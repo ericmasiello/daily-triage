@@ -210,9 +210,10 @@ private struct RawIssue: Decodable {
 private func mapRawMR(_ raw: RawMR) -> MR {
     let repoPath = raw.references?.full.map { full -> String in
         // Strip the trailing "!<iid>" to get just the repo path.
-        // e.g. "vistaprint-org/design-technology/studio/studio!12283" → "vistaprint-org/design-technology/studio/studio"
+        // e.g. "vistaprint-org/design-technology/studio/studio!12283" →
+        // "vistaprint-org/design-technology/studio/studio"
         if let bang = full.lastIndex(of: "!") {
-            return String(full[full.startIndex..<bang])
+            return String(full[full.startIndex ..< bang])
         }
         return full
     }
@@ -321,7 +322,8 @@ private func fetchAllGitLab(config: Config, shell: @escaping ShellRunner) async 
         group.addTask {
             fetchSource(
                 "glab api \"merge_requests?scope=all&reviewer_username=\(config.triageAuthor)&state=opened&per_page=100\"",
-                dir: nil, label: "reviewer MRs", runShell: shell) { out in
+                dir: nil, label: "reviewer MRs", runShell: shell
+            ) { out in
                 .reviewerMRs((decodeArray(out) as [RawMR]).map { mapRawMR($0) })
             }
         }
@@ -329,7 +331,8 @@ private func fetchAllGitLab(config: Config, shell: @escaping ShellRunner) async 
         group.addTask {
             fetchSource(
                 "glab api \"merge_requests?scope=all&assignee_username=\(config.triageAuthor)&state=opened&per_page=100\"",
-                dir: nil, label: "assigned MRs", runShell: shell) { out in
+                dir: nil, label: "assigned MRs", runShell: shell
+            ) { out in
                 .assignedMRs((decodeArray(out) as [RawMR]).map { mapRawMR($0) })
             }
         }
@@ -707,17 +710,17 @@ private func computeAnalysis(
     }
 
     // MARK: Review queue — cross-repo MRs where the user is reviewer or assignee
+
     // Deduplicate by web_url so an MR where the user is both reviewer and assignee appears once,
     // with role "reviewer+assignee".
     var reviewQueueByURL: [String: ReviewQueueMR] = [:]
 
     let addToReviewQueue = { (mr: MR, role: String) in
         let key = mr.webUrl ?? "\(mr.iid)"
-        let ageHours: Int
-        if let created = mr.createdAt, let createdDate = isoFormatter.date(from: created) {
-            ageHours = max(0, Int(referenceDate.timeIntervalSince(createdDate) / 3600))
+        let ageHours: Int = if let created = mr.createdAt, let createdDate = isoFormatter.date(from: created) {
+            max(0, Int(referenceDate.timeIntervalSince(createdDate) / 3600))
         } else {
-            ageHours = 0
+            0
         }
         if let existing = reviewQueueByURL[key] {
             reviewQueueByURL[key] = ReviewQueueMR(
@@ -739,7 +742,7 @@ private func computeAnalysis(
     }
 
     for mr in snapshot.reviewerMrs { addToReviewQueue(mr, "reviewer") }
-    for mr in snapshot.assignedMrs  { addToReviewQueue(mr, "assignee") }
+    for mr in snapshot.assignedMrs { addToReviewQueue(mr, "assignee") }
 
     let reviewQueue = reviewQueueByURL.values
         .sorted { a, b in a.ageHours > b.ageHours }
