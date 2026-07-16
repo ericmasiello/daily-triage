@@ -11,4 +11,4 @@
 --trimwhitespace always
 --header strip
 --ifdef no-indent
---disable andOperator,wrapMultilineStatementBraces
+--disable andOperator,wrapMultilineStatementBraces,wrapIfStatementBodies
