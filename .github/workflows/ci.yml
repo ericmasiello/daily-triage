@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  build-test-lint:
+    name: Build, Test & Lint
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: brew bundle --no-lock
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+
+      - name: Build
+        run: swiftc Sources/*.swift -o triage-cache
+
+      - name: Test
+        run: ./tests/run-all.sh
+
+      - name: Format check
+        run: swiftformat --lint Sources/
+
+      - name: Lint
+        run: swiftlint lint --quiet Sources/
