@@ -27,7 +27,9 @@ jobs:
         run: ./tests/run-all.sh
 
       - name: Format check
-        run: swiftformat --lint Sources/
+        run: |
+          swiftformat Sources/
+          git diff --exit-code Sources/
 
       - name: Lint
         run: swiftlint lint --quiet --lenient Sources/
