@@ -563,6 +563,7 @@ private struct TierIssue: Codable {
     let workstreamCompletion: Int?
     let priority: String?
     let reason: String
+    let webUrl: String?
 }
 
 private struct PRDHierarchyEntry: Codable {
@@ -663,7 +664,8 @@ private func computeAnalysis(
                 title: issue.title,
                 workstreamCompletion: completion,
                 priority: priority,
-                reason: "near_complete_workstream"
+                reason: "near_complete_workstream",
+                webUrl: issue.webUrl
             ))
         } else {
             tier3.append(TierIssue(
@@ -671,7 +673,8 @@ private func computeAnalysis(
                 title: issue.title,
                 workstreamCompletion: nil,
                 priority: priority,
-                reason: "remaining_by_value_age"
+                reason: "remaining_by_value_age",
+                webUrl: issue.webUrl
             ))
         }
     }

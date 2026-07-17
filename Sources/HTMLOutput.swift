@@ -258,13 +258,14 @@ private func tierIssueTable(title: String, issues: [[String: Any]], accent: Stri
         let url = issue["web_url"] as? String ?? ""
 
         let iidLink = url.isEmpty ? "#\(iid)" : "<a href=\"\(htmlEscape(url))\" target=\"_blank\">#\(iid)</a>"
+        let titleContent = url.isEmpty ? htmlEscape(issueTitle) : "<a href=\"\(htmlEscape(url))\" target=\"_blank\">\(htmlEscape(issueTitle))</a>"
         let priorityBadge = priority.isEmpty ? "" : "<span class=\"label-badge\">\(htmlEscape(priority))</span>"
         let completionText = completion.map { "<span class=\"muted\">\($0)% done</span>" } ?? ""
 
         return """
             <tr>
               <td class="mr-iid">\(iidLink)</td>
-              <td class="mr-title">\(htmlEscape(issueTitle))</td>
+              <td class="mr-title">\(titleContent)</td>
               <td>\(priorityBadge) \(completionText)</td>
             </tr>
         """
