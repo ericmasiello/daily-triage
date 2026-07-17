@@ -86,12 +86,15 @@ private func renderHTML(from text: String) -> String {
 
     // Changes block (DELTA mode)
     if let changes = changesBlock, !changes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        let changeItems = changes.components(separatedBy: "\n")
+            .filter { !$0.isEmpty }
+            .map { "<li>\(htmlEscape($0))</li>" }
+            .joined(separator: "\n            ")
         sections.append("""
         <div class="section">
           <h2>Changes</h2>
           <ul class="changes-list">
-            \(changes.components(separatedBy: "\n").filter { !$0.isEmpty }.map { "<li>\(htmlEscape($0))</li>" }
-            .joined(separator: "\n            "))
+            \(changeItems)
           </ul>
         </div>
         """)
@@ -185,20 +188,25 @@ private func mrTable(title: String, mrs: [[String: Any]], accent: String) -> Str
         let labels = (mr["labels"] as? [String] ?? []).filter { !$0.isEmpty }
 
         let iidLink = url.isEmpty ? "!\(iid)" : "<a href=\"\(htmlEscape(url))\" target=\"_blank\">!\(iid)</a>"
-        let statusBadge = "<span class=\"status-badge status-\(htmlEscape(statusClass(status)))\">\(htmlEscape(statusLabel(status)))</span>"
+        let statusCls = htmlEscape(statusClass(status))
+        let statusText = htmlEscape(statusLabel(status))
+        let statusBadge = "<span class=\"status-badge status-\(statusCls)\">\(statusText)</span>"
         let ageText = age.isEmpty ? "" : "\(age)h"
-        let labelBadges = labels.map { "<span class=\"label-badge\">\(htmlEscape($0))</span>" }.joined(separator: " ")
+        let labelBadges = labels
+            .map { "<span class=\"label-badge\">\(htmlEscape($0))</span>" }
+            .joined(separator: " ")
+        let labelRow = labelBadges.isEmpty ? "" : "<div class=\"label-row\">\(labelBadges)</div>"
 
         return """
             <tr>
               <td class="mr-iid">\(iidLink)</td>
-              <td class="mr-title">\(htmlEscape(mrTitle))\(labelBadges
-            .isEmpty ? "" : "<div class=\"label-row\">\(labelBadges)</div>")</td>
+              <td class="mr-title">\(htmlEscape(mrTitle))\(labelRow)</td>
               <td>\(statusBadge)</td>
               <td class="mr-age">\(ageText)</td>
             </tr>
         """
-    }.joined(separator: "\n")
+    }
+    let tableRows = rows.joined(separator: "\n")
 
     return """
     <div class="analysis-card analysis-card--\(accent)">
@@ -206,7 +214,7 @@ private func mrTable(title: String, mrs: [[String: Any]], accent: String) -> Str
       <table class="mr-table">
         <thead><tr><th>MR</th><th>Title</th><th>Status</th><th>Age</th></tr></thead>
         <tbody>
-    \(rows)
+    \(tableRows)
         </tbody>
       </table>
     </div>
@@ -224,7 +232,8 @@ private func reviewQueueTable(_ queue: [[String: Any]]) -> String {
 
         let iidLink = url.isEmpty ? "!\(iid)" : "<a href=\"\(htmlEscape(url))\" target=\"_blank\">!\(iid)</a>"
         let ageText = age.isEmpty ? "" : "\(age)h"
-        let roleBadge = "<span class=\"status-badge status-\(htmlEscape(role.replacingOccurrences(of: "+", with: "-")))\">\(htmlEscape(role))</span>"
+        let roleClass = htmlEscape(role.replacingOccurrences(of: "+", with: "-"))
+        let roleBadge = "<span class=\"status-badge status-\(roleClass)\">\(htmlEscape(role))</span>"
 
         return """
             <tr>
@@ -234,7 +243,8 @@ private func reviewQueueTable(_ queue: [[String: Any]]) -> String {
               <td class="mr-age">\(ageText)</td>
             </tr>
         """
-    }.joined(separator: "\n")
+    }
+    let tableRows = rows.joined(separator: "\n")
 
     return """
     <div class="analysis-card analysis-card--tier1">
@@ -242,7 +252,7 @@ private func reviewQueueTable(_ queue: [[String: Any]]) -> String {
       <table class="mr-table">
         <thead><tr><th>MR</th><th>Title</th><th>Role</th><th>Age</th></tr></thead>
         <tbody>
-    \(rows)
+    \(tableRows)
         </tbody>
       </table>
     </div>
@@ -258,7 +268,10 @@ private func tierIssueTable(title: String, issues: [[String: Any]], accent: Stri
         let url = issue["web_url"] as? String ?? ""
 
         let iidLink = url.isEmpty ? "#\(iid)" : "<a href=\"\(htmlEscape(url))\" target=\"_blank\">#\(iid)</a>"
-        let titleContent = url.isEmpty ? htmlEscape(issueTitle) : "<a href=\"\(htmlEscape(url))\" target=\"_blank\">\(htmlEscape(issueTitle))</a>"
+        let escapedTitle = htmlEscape(issueTitle)
+        let titleContent = url.isEmpty
+            ? escapedTitle
+            : "<a href=\"\(htmlEscape(url))\" target=\"_blank\">\(escapedTitle)</a>"
         let priorityBadge = priority.isEmpty ? "" : "<span class=\"label-badge\">\(htmlEscape(priority))</span>"
         let completionText = completion.map { "<span class=\"muted\">\($0)% done</span>" } ?? ""
 
@@ -269,7 +282,8 @@ private func tierIssueTable(title: String, issues: [[String: Any]], accent: Stri
               <td>\(priorityBadge) \(completionText)</td>
             </tr>
         """
-    }.joined(separator: "\n")
+    }
+    let tableRows = rows.joined(separator: "\n")
 
     return """
     <div class="analysis-card analysis-card--\(accent)">
@@ -277,7 +291,7 @@ private func tierIssueTable(title: String, issues: [[String: Any]], accent: Stri
       <table class="mr-table">
         <thead><tr><th>Issue</th><th>Title</th><th>Priority</th></tr></thead>
         <tbody>
-    \(rows)
+    \(tableRows)
         </tbody>
       </table>
     </div>
@@ -287,15 +301,16 @@ private func tierIssueTable(title: String, issues: [[String: Any]], accent: Stri
 private func staleWorktreeList(_ worktrees: [[String: Any]]) -> String {
     let items = worktrees.map { wt -> String in
         let path = wt["path"] as? String ?? "?"
-        let reason = wt["reason"] as? String ?? ""
-        return "<li><code>\(htmlEscape(path))</code> <span class=\"muted\">— \(htmlEscape(reason.replacingOccurrences(of: "_", with: " ")))</span></li>"
-    }.joined(separator: "\n          ")
+        let reason = (wt["reason"] as? String ?? "").replacingOccurrences(of: "_", with: " ")
+        return "<li><code>\(htmlEscape(path))</code> <span class=\"muted\">— \(htmlEscape(reason))</span></li>"
+    }
+    let itemList = items.joined(separator: "\n          ")
 
     return """
     <div class="analysis-card analysis-card--warning">
       <h3>Stale Worktrees</h3>
       <ul class="worktree-list">
-          \(items)
+          \(itemList)
       </ul>
     </div>
     """
@@ -474,7 +489,12 @@ private func metaRow(mode _: String, reason: String?, cacheAge: String?, changes
 }
 
 private func metaChip(_ label: String, _ value: String) -> String {
-    "<span class=\"meta-chip\"><span class=\"meta-label\">\(htmlEscape(label))</span><span class=\"meta-value\">\(htmlEscape(value))</span></span>"
+    let escapedLabel = htmlEscape(label)
+    let escapedValue = htmlEscape(value)
+    return "<span class=\"meta-chip\">"
+        + "<span class=\"meta-label\">\(escapedLabel)</span>"
+        + "<span class=\"meta-value\">\(escapedValue)</span>"
+        + "</span>"
 }
 
 private func statusClass(_ status: String) -> String {

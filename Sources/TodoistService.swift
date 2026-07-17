@@ -1,5 +1,22 @@
 import Foundation
 
+// MARK: - Todoist value types
+
+struct TodoistTask: Codable, Equatable {
+    let id: String
+    let content: String
+    let priority: Int
+    let due: TodoistDue?
+    let labels: [String]
+    let url: String
+}
+
+struct TodoistDue: Codable, Equatable {
+    let date: String
+    let isRecurring: Bool
+    let string: String?
+}
+
 // MARK: - Todoist Service
 
 struct TodoistService: DataSourceService {
@@ -7,24 +24,9 @@ struct TodoistService: DataSourceService {
     let failurePolicy: FailurePolicy = .degradable
 
     struct State: Codable, Equatable {
-        var overdue: [Task]
-        var today: [Task]
-        var upNext: [Task]
-
-        struct Task: Codable, Equatable {
-            let id: String
-            let content: String
-            let priority: Int
-            let due: Due?
-            let labels: [String]
-            let url: String
-        }
-
-        struct Due: Codable, Equatable {
-            let date: String
-            let isRecurring: Bool
-            let string: String?
-        }
+        var overdue: [TodoistTask]
+        var today: [TodoistTask]
+        var upNext: [TodoistTask]
     }
 
     private(set) var fetchedState: State?
@@ -61,8 +63,8 @@ struct TodoistService: DataSourceService {
             return results
         }
 
-        var todayOverdueTasks: [State.Task]? = nil
-        var upNextTasks: [State.Task]? = nil
+        var todayOverdueTasks: [TodoistTask]?
+        var upNextTasks: [TodoistTask]?
         var errors: [String] = []
 
         for output in outputs {
@@ -139,14 +141,14 @@ private struct RawTodoistDue: Decodable {
     let string: String?
 }
 
-private extension TodoistService.State.Task {
+private extension TodoistTask {
     init(from raw: RawTodoistTask) {
         self.init(
             id: raw.id,
             content: raw.content,
             priority: raw.priority,
             due: raw.due
-                .map { TodoistService.State.Due(date: $0.date, isRecurring: $0.isRecurring, string: $0.string) },
+                .map { TodoistDue(date: $0.date, isRecurring: $0.isRecurring, string: $0.string) },
             labels: raw.labels,
             url: raw.url
         )
@@ -155,18 +157,18 @@ private extension TodoistService.State.Task {
 
 // MARK: - JSON decoding helpers
 
-private func decodeTodoistTasks(_ string: String) -> [TodoistService.State.Task] {
+private func decodeTodoistTasks(_ string: String) -> [TodoistTask] {
     guard !string.isEmpty, let data = string.data(using: .utf8) else { return [] }
     let decoder = JSONDecoder()
     guard let response = try? decoder.decode(RawTodoistResponse.self, from: data) else { return [] }
-    return response.results.map { TodoistService.State.Task(from: $0) }
+    return response.results.map { TodoistTask(from: $0) }
 }
 
 // MARK: - Fetch internals
 
 private enum TodoistFetchOutput: Sendable {
-    case todayOverdue([TodoistService.State.Task])
-    case upNext([TodoistService.State.Task])
+    case todayOverdue([TodoistTask])
+    case upNext([TodoistTask])
     case failed(String)
 }
 
@@ -213,16 +215,16 @@ private func diffTodoist(cached: TodoistService.State?, fresh: TodoistService.St
     return changes
 }
 
-private func flattenTodoist(_ snapshot: TodoistService.State?) -> [String: (String, TodoistService.State.Task)] {
-    guard let s = snapshot else { return [:] }
-    var result: [String: (String, TodoistService.State.Task)] = [:]
-    for task in s.overdue {
+private func flattenTodoist(_ snapshot: TodoistService.State?) -> [String: (String, TodoistTask)] {
+    guard let snapshot else { return [:] }
+    var result: [String: (String, TodoistTask)] = [:]
+    for task in snapshot.overdue {
         result[task.id] = ("overdue", task)
     }
-    for task in s.today {
+    for task in snapshot.today {
         result[task.id] = ("today", task)
     }
-    for task in s.upNext {
+    for task in snapshot.upNext {
         result[task.id] = ("up_next", task)
     }
     return result

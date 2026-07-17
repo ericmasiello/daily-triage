@@ -20,7 +20,7 @@ struct OutputOptions {
     /// --open html            → open the HTML file after writing
     static func parse(from args: [String]) -> OutputOptions {
         var formats: Set<OutputFormat> = [.md]
-        var autoOpen: OutputFormat? = nil
+        var autoOpen: OutputFormat?
 
         if let formatFlagIndex = args.firstIndex(of: "--format"), formatFlagIndex + 1 < args.count {
             let rawFormats = args[formatFlagIndex + 1].split(separator: ",")
@@ -67,8 +67,8 @@ struct Config {
         }()
 
         let todayDate: String = {
-            if let d = ProcessInfo.processInfo.environment["TRIAGE_TODAY"] {
-                return d
+            if let dateOverride = ProcessInfo.processInfo.environment["TRIAGE_TODAY"] {
+                return dateOverride
             }
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd"

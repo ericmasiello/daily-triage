@@ -7,39 +7,8 @@ struct TriageCache {
         let args = CommandLine.arguments
         let outputOptions = OutputOptions.parse(from: args)
 
-        if let idx = args.firstIndex(of: "--save-report") {
-            guard idx + 1 < args.count else {
-                fputs("Usage: triage-cache --save-report \"<markdown>\"\n", stderr)
-                exit(1)
-            }
-            do {
-                try saveReport(args[idx + 1], config: config)
-            } catch {
-                fputs("Error: \(error)\n", stderr)
-                exit(1)
-            }
-            exit(0)
-        }
-
-        do {
-            _ = try shell("which glab")
-        } catch {
-            fputs("Error: glab CLI not found. Install: brew install glab\n", stderr)
-            exit(1)
-        }
-
-        do {
-            _ = try shell("glab auth status")
-        } catch {
-            fputs("Error: glab authentication expired or invalid. Run: glab auth login\n", stderr)
-            fputs("  \(error)\n", stderr)
-            exit(1)
-        }
-
-        guard FileManager.default.fileExists(atPath: config.studioDir) else {
-            fputs("Error: \(config.studioDir) not found\n", stderr)
-            exit(1)
-        }
+        handleSaveReport(args: args, config: config)
+        checkPrerequisites(config: config)
 
         let runShell: ShellRunner = { command, dir in try shell(command, workingDirectory: dir) }
 
@@ -57,58 +26,43 @@ struct TriageCache {
         let forceMode = args.contains("--force")
 
         if forceMode {
-            let snapshot = assembleSnapshot(gitlab: gitlabService, todoist: todoistService)
-            let serviceLines = collectServiceLines([gitlabService, todoistService], snapshot: snapshot)
-            let recommendation = gitlabService.computeRecommendation(snapshot: snapshot)
-            emit(
-                formatFull(reason: "forced", snapshot: snapshot, serviceLines: serviceLines),
+            emitFull(
+                reason: "forced",
+                gitlab: gitlabService,
+                todoist: todoistService,
                 options: outputOptions,
                 config: config
             )
-            writeCache(snapshot: snapshot, recommendation: recommendation, config: config)
             exit(0)
         }
 
         let reason = determineReason(config: config)
 
         if reason != "cache_valid" {
-            let snapshot = assembleSnapshot(gitlab: gitlabService, todoist: todoistService)
-            let serviceLines = collectServiceLines([gitlabService, todoistService], snapshot: snapshot)
-            let recommendation = gitlabService.computeRecommendation(snapshot: snapshot)
-            emit(
-                formatFull(reason: reason, snapshot: snapshot, serviceLines: serviceLines),
+            emitFull(
+                reason: reason,
+                gitlab: gitlabService,
+                todoist: todoistService,
                 options: outputOptions,
                 config: config
             )
-            writeCache(snapshot: snapshot, recommendation: recommendation, config: config)
             exit(0)
         }
 
         let cache = readCache(config: config)!
-
         todoistService.reconcileIfNeeded(cached: cache.snapshot)
-
         let snapshot = assembleSnapshot(gitlab: gitlabService, todoist: todoistService)
-
-        let services: [any DataSourceService] = [gitlabService, todoistService]
-        var diff = DiffResult()
-        for service in services {
-            let (changes, signals) = service.diff(cached: cache.snapshot, fresh: snapshot)
-            diff.changes += changes
-            diff.signals += signals
-        }
-
+        let diff = computeDiff(services: [gitlabService, todoistService], cache: cache, snapshot: snapshot)
         let ageMinutes = cacheAgeMinutes(cache)
 
         if diff.signals.contains(.priorityChange) {
-            let serviceLines = collectServiceLines(services, snapshot: snapshot)
-            let recommendation = gitlabService.computeRecommendation(snapshot: snapshot)
-            emit(
-                formatFull(reason: "priority_labels_changed", snapshot: snapshot, serviceLines: serviceLines),
+            emitFull(
+                reason: "priority_labels_changed",
+                gitlab: gitlabService,
+                todoist: todoistService,
                 options: outputOptions,
                 config: config
             )
-            writeCache(snapshot: snapshot, recommendation: recommendation, config: config)
         } else if diff.isEmpty {
             emit(
                 formatNoChanges(ageMinutes: ageMinutes, report: cache.report, recommendation: cache.recommendation),
@@ -130,6 +84,75 @@ struct TriageCache {
             writeCache(snapshot: snapshot, recommendation: recommendation, config: config)
         }
     }
+}
+
+// MARK: - Startup helpers
+
+private func handleSaveReport(args: [String], config: Config) {
+    guard let idx = args.firstIndex(of: "--save-report") else { return }
+    guard idx + 1 < args.count else {
+        fputs("Usage: triage-cache --save-report \"<markdown>\"\n", stderr)
+        exit(1)
+    }
+    do {
+        try saveReport(args[idx + 1], config: config)
+    } catch {
+        fputs("Error: \(error)\n", stderr)
+        exit(1)
+    }
+    exit(0)
+}
+
+private func checkPrerequisites(config: Config) {
+    do {
+        _ = try shell("which glab")
+    } catch {
+        fputs("Error: glab CLI not found. Install: brew install glab\n", stderr)
+        exit(1)
+    }
+    do {
+        _ = try shell("glab auth status")
+    } catch {
+        fputs("Error: glab authentication expired or invalid. Run: glab auth login\n", stderr)
+        fputs("  \(error)\n", stderr)
+        exit(1)
+    }
+    guard FileManager.default.fileExists(atPath: config.studioDir) else {
+        fputs("Error: \(config.studioDir) not found\n", stderr)
+        exit(1)
+    }
+}
+
+private func emitFull(
+    reason: String,
+    gitlab: GitLabService,
+    todoist: TodoistService,
+    options: OutputOptions,
+    config: Config
+) {
+    let snapshot = assembleSnapshot(gitlab: gitlab, todoist: todoist)
+    let serviceLines = collectServiceLines([gitlab, todoist], snapshot: snapshot)
+    let recommendation = gitlab.computeRecommendation(snapshot: snapshot)
+    emit(
+        formatFull(reason: reason, snapshot: snapshot, serviceLines: serviceLines),
+        options: options,
+        config: config
+    )
+    writeCache(snapshot: snapshot, recommendation: recommendation, config: config)
+}
+
+private func computeDiff(
+    services: [any DataSourceService],
+    cache: CacheEnvelope,
+    snapshot: Snapshot
+) -> DiffResult {
+    var diff = DiffResult()
+    for service in services {
+        let (changes, signals) = service.diff(cached: cache.snapshot, fresh: snapshot)
+        diff.changes += changes
+        diff.signals += signals
+    }
+    return diff
 }
 
 // MARK: - Fetch helpers
