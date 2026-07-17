@@ -19,6 +19,10 @@ elif [[ "$args" == *"mr list"*"--draft"* ]]; then
   cat "$FIXTURE_DIR/${FIXTURE_SET}/draft_mrs.json"
 elif [[ "$args" == *"mr list"*"sandcastle"* ]]; then
   cat "$FIXTURE_DIR/${FIXTURE_SET}/sandcastle_mrs.json"
+elif [[ "$args" == *"api"*"reviewer_username"* ]]; then
+  cat "$FIXTURE_DIR/${FIXTURE_SET}/reviewer_mrs.json"
+elif [[ "$args" == *"api"*"assignee_username"* ]]; then
+  cat "$FIXTURE_DIR/${FIXTURE_SET}/assigned_mrs.json"
 elif [[ "$args" == *"issue list"* ]]; then
   cat "$FIXTURE_DIR/${FIXTURE_SET}/issues.json"
 elif [[ "$args" == *"auth status"* ]]; then

@@ -14,6 +14,9 @@ struct MR: Codable, Equatable {
     let userNotesCount: Int?
     let hasConflicts: Bool?
     let reviewerUsernames: [String]?
+    /// Full repo path, e.g. "vistaprint-org/design-technology/studio/studio".
+    /// Populated for cross-repo MRs fetched via the instance-level API.
+    let repoPath: String?
 }
 
 /// An issue with the fields relevant for triage.
@@ -30,6 +33,8 @@ struct Snapshot: Codable {
     var nonDraftMrs: [MR]
     var draftMrs: [MR]
     var sandcastleMrs: [MR]
+    var reviewerMrs: [MR]
+    var assignedMrs: [MR]
     var issues: [Issue]
     var worktrees: [String]
     var mergedBranches: [String]
@@ -42,6 +47,8 @@ struct Snapshot: Codable {
                 nonDraftMrs: nonDraftMrs,
                 draftMrs: draftMrs,
                 sandcastleMrs: sandcastleMrs,
+                reviewerMrs: reviewerMrs,
+                assignedMrs: assignedMrs,
                 issues: issues,
                 worktrees: worktrees,
                 mergedBranches: mergedBranches
@@ -51,6 +58,8 @@ struct Snapshot: Codable {
             nonDraftMrs = newValue.nonDraftMrs
             draftMrs = newValue.draftMrs
             sandcastleMrs = newValue.sandcastleMrs
+            reviewerMrs = newValue.reviewerMrs
+            assignedMrs = newValue.assignedMrs
             issues = newValue.issues
             worktrees = newValue.worktrees
             mergedBranches = newValue.mergedBranches
@@ -61,6 +70,8 @@ struct Snapshot: Codable {
         nonDraftMrs = gitlab.nonDraftMrs
         draftMrs = gitlab.draftMrs
         sandcastleMrs = gitlab.sandcastleMrs
+        reviewerMrs = gitlab.reviewerMrs
+        assignedMrs = gitlab.assignedMrs
         issues = gitlab.issues
         worktrees = gitlab.worktrees
         mergedBranches = gitlab.mergedBranches
@@ -72,6 +83,8 @@ struct Snapshot: Codable {
         nonDraftMrs: [MR],
         draftMrs: [MR],
         sandcastleMrs: [MR],
+        reviewerMrs: [MR] = [],
+        assignedMrs: [MR] = [],
         issues: [Issue],
         worktrees: [String],
         mergedBranches: [String],
@@ -81,6 +94,8 @@ struct Snapshot: Codable {
         self.nonDraftMrs = nonDraftMrs
         self.draftMrs = draftMrs
         self.sandcastleMrs = sandcastleMrs
+        self.reviewerMrs = reviewerMrs
+        self.assignedMrs = assignedMrs
         self.issues = issues
         self.worktrees = worktrees
         self.mergedBranches = mergedBranches

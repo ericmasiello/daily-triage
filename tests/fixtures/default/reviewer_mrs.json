@@ -1,0 +1,17 @@
+[
+  {
+    "iid": 200,
+    "title": "Add observability skill",
+    "draft": false,
+    "source_branch": "feat/observability-skill",
+    "created_at": "2026-05-10T08:00:00Z",
+    "updated_at": "2026-05-20T12:00:00Z",
+    "web_url": "https://gitlab.com/vistaprint-org/ai-engineering/ai-coding-guide/-/merge_requests/200",
+    "labels": [],
+    "detailed_merge_status": "not_approved",
+    "user_notes_count": 3,
+    "has_conflicts": false,
+    "reviewers": [{"username": "ericmasiello"}],
+    "references": {"full": "vistaprint-org/ai-engineering/ai-coding-guide!200"}
+  }
+]

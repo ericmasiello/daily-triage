@@ -10,6 +10,8 @@ struct GitLabService: DataSourceService {
         var nonDraftMrs: [MR]
         var draftMrs: [MR]
         var sandcastleMrs: [MR]
+        var reviewerMrs: [MR]
+        var assignedMrs: [MR]
         var issues: [Issue]
         var worktrees: [String]
         var mergedBranches: [String]
@@ -36,6 +38,8 @@ struct GitLabService: DataSourceService {
         var nonDraftMRs: [MR] = []
         var draftMRs: [MR] = []
         var sandcastleMRs: [MR] = []
+        var reviewerMRs: [MR] = []
+        var assignedMRs: [MR] = []
         var issuesList: [Issue] = []
         var allIssuesList: [Issue] = []
         var descriptions: [Int: String] = [:]
@@ -48,6 +52,8 @@ struct GitLabService: DataSourceService {
             case let .nonDraftMRs(mrs): nonDraftMRs = mrs
             case let .draftMRs(mrs): draftMRs = mrs
             case let .sandcastleMRs(mrs): sandcastleMRs = mrs
+            case let .reviewerMRs(mrs): reviewerMRs = mrs
+            case let .assignedMRs(mrs): assignedMRs = mrs
             case let .issues(open, descs, all):
                 issuesList = open
                 descriptions = descs
@@ -75,6 +81,8 @@ struct GitLabService: DataSourceService {
             nonDraftMrs: nonDraftMRs,
             draftMrs: draftMRs,
             sandcastleMrs: sandcastleMRs,
+            reviewerMrs: reviewerMRs,
+            assignedMrs: assignedMRs,
             issues: issuesList,
             worktrees: worktreesList,
             mergedBranches: filteredBranches
@@ -95,6 +103,8 @@ struct GitLabService: DataSourceService {
         diffMRs(&changes, label: "MR", cached: old.nonDraftMrs, fresh: new.nonDraftMrs)
         diffMRs(&changes, label: "Draft MR", cached: old.draftMrs, fresh: new.draftMrs)
         diffMRs(&changes, label: "Sandcastle MR", cached: old.sandcastleMrs, fresh: new.sandcastleMrs)
+        diffMRs(&changes, label: "Reviewer MR", cached: old.reviewerMrs, fresh: new.reviewerMrs)
+        diffMRs(&changes, label: "Assigned MR", cached: old.assignedMrs, fresh: new.assignedMrs)
         diffIssues(
             &changes,
             hasPriorityChange: &hasPriorityChange,
@@ -174,9 +184,14 @@ private struct RawMR: Decodable {
     let userNotesCount: Int?
     let hasConflicts: Bool?
     let reviewers: [Reviewer]?
+    let references: References?
 
     struct Reviewer: Decodable {
         let username: String
+    }
+
+    struct References: Decodable {
+        let full: String?
     }
 }
 
@@ -193,7 +208,16 @@ private struct RawIssue: Decodable {
 // MARK: - Raw → Typed mapping
 
 private func mapRawMR(_ raw: RawMR) -> MR {
-    MR(
+    let repoPath = raw.references?.full.map { full -> String in
+        // Strip the trailing "!<iid>" to get just the repo path.
+        // e.g. "vistaprint-org/design-technology/studio/studio!12283" →
+        // "vistaprint-org/design-technology/studio/studio"
+        if let bang = full.lastIndex(of: "!") {
+            return String(full[full.startIndex ..< bang])
+        }
+        return full
+    }
+    return MR(
         iid: raw.iid,
         title: raw.title,
         draft: raw.draft,
@@ -205,7 +229,8 @@ private func mapRawMR(_ raw: RawMR) -> MR {
         detailedMergeStatus: raw.detailedMergeStatus,
         userNotesCount: raw.userNotesCount,
         hasConflicts: raw.hasConflicts,
-        reviewerUsernames: raw.reviewers?.map(\.username)
+        reviewerUsernames: raw.reviewers?.map(\.username),
+        repoPath: repoPath
     )
 }
 
@@ -235,6 +260,8 @@ private enum FetchOutput: Sendable {
     case nonDraftMRs([MR])
     case draftMRs([MR])
     case sandcastleMRs([MR])
+    case reviewerMRs([MR])
+    case assignedMRs([MR])
     case issues(open: [Issue], descriptions: [Int: String], all: [Issue])
     case worktrees([String])
     case mergedBranches([String])
@@ -289,6 +316,24 @@ private func fetchAllGitLab(config: Config, shell: @escaping ShellRunner) async 
                 runShell: shell
             ) { out in
                 .sandcastleMRs((decodeArray(out) as [RawMR]).map { mapRawMR($0) })
+            }
+        }
+
+        group.addTask {
+            fetchSource(
+                "glab api \"merge_requests?scope=all&reviewer_username=\(config.triageAuthor)&state=opened&per_page=100\"",
+                dir: nil, label: "reviewer MRs", runShell: shell
+            ) { out in
+                .reviewerMRs((decodeArray(out) as [RawMR]).map { mapRawMR($0) })
+            }
+        }
+
+        group.addTask {
+            fetchSource(
+                "glab api \"merge_requests?scope=all&assignee_username=\(config.triageAuthor)&state=opened&per_page=100\"",
+                dir: nil, label: "assigned MRs", runShell: shell
+            ) { out in
+                .assignedMRs((decodeArray(out) as [RawMR]).map { mapRawMR($0) })
             }
         }
 
@@ -474,6 +519,7 @@ private func describeOptional(_ value: (some Any)?) -> String {
 private struct AnalysisResult: Codable {
     let prdHierarchy: [PRDHierarchyEntry]
     let tier1Mrs: [Tier1MR]
+    let reviewQueue: [ReviewQueueMR]
     let tier2Issues: [TierIssue]
     let tier3Issues: [TierIssue]
     let staleWorktrees: [StaleWorktree]
@@ -482,6 +528,7 @@ private struct AnalysisResult: Codable {
     enum CodingKeys: String, CodingKey {
         case prdHierarchy = "prd_hierarchy"
         case tier1Mrs = "tier_1_mrs"
+        case reviewQueue = "review_queue"
         case tier2Issues = "tier_2_issues"
         case tier3Issues = "tier_3_issues"
         case staleWorktrees = "stale_worktrees"
@@ -496,6 +543,15 @@ private struct Tier1MR: Codable {
     let ageHours: Int
 }
 
+private struct ReviewQueueMR: Codable {
+    let iid: Int
+    let title: String
+    let repo: String
+    let role: String
+    let ageHours: Int
+    let webUrl: String?
+}
+
 private struct StaleWorktree: Codable {
     let path: String
     let reason: String
@@ -507,6 +563,7 @@ private struct TierIssue: Codable {
     let workstreamCompletion: Int?
     let priority: String?
     let reason: String
+    let webUrl: String?
 }
 
 private struct PRDHierarchyEntry: Codable {
@@ -607,7 +664,8 @@ private func computeAnalysis(
                 title: issue.title,
                 workstreamCompletion: completion,
                 priority: priority,
-                reason: "near_complete_workstream"
+                reason: "near_complete_workstream",
+                webUrl: issue.webUrl
             ))
         } else {
             tier3.append(TierIssue(
@@ -615,7 +673,8 @@ private func computeAnalysis(
                 title: issue.title,
                 workstreamCompletion: nil,
                 priority: priority,
-                reason: "remaining_by_value_age"
+                reason: "remaining_by_value_age",
+                webUrl: issue.webUrl
             ))
         }
     }
@@ -654,6 +713,46 @@ private func computeAnalysis(
         return a.ageHours > b.ageHours
     }
 
+    // MARK: Review queue — cross-repo MRs where the user is reviewer or assignee
+
+    // Deduplicate by web_url so an MR where the user is both reviewer and assignee appears once,
+    // with role "reviewer+assignee".
+    var reviewQueueByURL: [String: ReviewQueueMR] = [:]
+
+    let addToReviewQueue = { (mr: MR, role: String) in
+        let key = mr.webUrl ?? "\(mr.iid)"
+        let ageHours: Int = if let created = mr.createdAt, let createdDate = isoFormatter.date(from: created) {
+            max(0, Int(referenceDate.timeIntervalSince(createdDate) / 3600))
+        } else {
+            0
+        }
+        if let existing = reviewQueueByURL[key] {
+            reviewQueueByURL[key] = ReviewQueueMR(
+                iid: existing.iid,
+                title: existing.title,
+                repo: existing.repo,
+                role: "reviewer+assignee",
+                ageHours: existing.ageHours,
+                webUrl: existing.webUrl
+            )
+        } else {
+            reviewQueueByURL[key] = ReviewQueueMR(
+                iid: mr.iid,
+                title: mr.title,
+                repo: mr.repoPath ?? "unknown",
+                role: role,
+                ageHours: ageHours,
+                webUrl: mr.webUrl
+            )
+        }
+    }
+
+    for mr in snapshot.reviewerMrs { addToReviewQueue(mr, "reviewer") }
+    for mr in snapshot.assignedMrs { addToReviewQueue(mr, "assignee") }
+
+    let reviewQueue = reviewQueueByURL.values
+        .sorted { a, b in a.ageHours > b.ageHours }
+
     // MARK: Stale worktrees
 
     let mergedBranchShortNames = Set(snapshot.mergedBranches.compactMap { branch -> String? in
@@ -678,6 +777,7 @@ private func computeAnalysis(
     return AnalysisResult(
         prdHierarchy: entries,
         tier1Mrs: tier1,
+        reviewQueue: reviewQueue,
         tier2Issues: tier2,
         tier3Issues: tier3,
         staleWorktrees: staleWorktrees,

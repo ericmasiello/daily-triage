@@ -128,17 +128,22 @@ private func renderAnalysis(_ jsonString: String) -> String {
 
     // Tier 1 MRs
     if let mrs = obj["tier_1_mrs"] as? [[String: Any]], !mrs.isEmpty {
-        cards.append(mrTable(title: "Tier 1 — Ready to Merge / Needs Action", mrs: mrs, accent: "tier1"))
+        cards.append(mrTable(title: "Your MRs — Needs Action", mrs: mrs, accent: "tier1"))
     }
 
-    // Tier 2 MRs
-    if let mrs = obj["tier_2_mrs"] as? [[String: Any]], !mrs.isEmpty {
-        cards.append(mrTable(title: "Tier 2 — In Progress", mrs: mrs, accent: "tier2"))
+    // Review queue — cross-repo MRs where the user is reviewer or assignee
+    if let queue = obj["review_queue"] as? [[String: Any]], !queue.isEmpty {
+        cards.append(reviewQueueTable(queue))
     }
 
-    // Issues
-    if let issues = obj["issues"] as? [[String: Any]], !issues.isEmpty {
-        cards.append(issueTable(issues))
+    // Tier 2 issues
+    if let issues = obj["tier_2_issues"] as? [[String: Any]], !issues.isEmpty {
+        cards.append(tierIssueTable(title: "Near-Complete Workstreams", issues: issues, accent: "tier2"))
+    }
+
+    // Tier 3 issues
+    if let issues = obj["tier_3_issues"] as? [[String: Any]], !issues.isEmpty {
+        cards.append(tierIssueTable(title: "Remaining Issues", issues: issues, accent: "tier3"))
     }
 
     // Stale worktrees
@@ -208,31 +213,67 @@ private func mrTable(title: String, mrs: [[String: Any]], accent: String) -> Str
     """
 }
 
-private func issueTable(_ issues: [[String: Any]]) -> String {
-    let rows = issues.map { issue -> String in
-        let iid = issue["iid"].flatMap { anyToString($0) } ?? "?"
-        let title = issue["title"] as? String ?? ""
-        let tier = issue["tier"].flatMap { anyToString($0) } ?? ""
-        let url = issue["web_url"] as? String ?? ""
-        let labels = (issue["labels"] as? [String] ?? []).filter { !$0.isEmpty }
+private func reviewQueueTable(_ queue: [[String: Any]]) -> String {
+    let rows = queue.map { mr -> String in
+        let iid = mr["iid"].flatMap { anyToString($0) } ?? "?"
+        let mrTitle = mr["title"] as? String ?? ""
+        let repo = mr["repo"] as? String ?? ""
+        let role = mr["role"] as? String ?? ""
+        let age = mr["age_hours"].flatMap { anyToString($0) } ?? ""
+        let url = mr["web_url"] as? String ?? ""
 
-        let iidLink = url.isEmpty ? "#\(iid)" : "<a href=\"\(htmlEscape(url))\" target=\"_blank\">#\(iid)</a>"
-        let tierBadge = tier.isEmpty ? "" : "<span class=\"tier-badge\">p::\(tier)</span>"
-        let labelBadges = labels.map { "<span class=\"label-badge\">\(htmlEscape($0))</span>" }.joined(separator: " ")
+        let iidLink = url.isEmpty ? "!\(iid)" : "<a href=\"\(htmlEscape(url))\" target=\"_blank\">!\(iid)</a>"
+        let ageText = age.isEmpty ? "" : "\(age)h"
+        let roleBadge = "<span class=\"status-badge status-\(htmlEscape(role.replacingOccurrences(of: "+", with: "-")))\">\(htmlEscape(role))</span>"
 
         return """
             <tr>
               <td class="mr-iid">\(iidLink)</td>
-              <td class="mr-title">\(htmlEscape(title))\(labelBadges
-            .isEmpty ? "" : "<div class=\"label-row\">\(labelBadges)</div>")</td>
-              <td>\(tierBadge)</td>
+              <td class="mr-title">\(htmlEscape(mrTitle))<div class="muted">\(htmlEscape(repo))</div></td>
+              <td>\(roleBadge)</td>
+              <td class="mr-age">\(ageText)</td>
             </tr>
         """
     }.joined(separator: "\n")
 
     return """
-    <div class="analysis-card">
-      <h3>Issues</h3>
+    <div class="analysis-card analysis-card--tier1">
+      <h3>Review Queue (\(queue.count))</h3>
+      <table class="mr-table">
+        <thead><tr><th>MR</th><th>Title</th><th>Role</th><th>Age</th></tr></thead>
+        <tbody>
+    \(rows)
+        </tbody>
+      </table>
+    </div>
+    """
+}
+
+private func tierIssueTable(title: String, issues: [[String: Any]], accent: String) -> String {
+    let rows = issues.map { issue -> String in
+        let iid = issue["iid"].flatMap { anyToString($0) } ?? "?"
+        let issueTitle = issue["title"] as? String ?? ""
+        let priority = issue["priority"] as? String ?? ""
+        let completion = issue["workstream_completion"].flatMap { anyToString($0) }
+        let url = issue["web_url"] as? String ?? ""
+
+        let iidLink = url.isEmpty ? "#\(iid)" : "<a href=\"\(htmlEscape(url))\" target=\"_blank\">#\(iid)</a>"
+        let titleContent = url.isEmpty ? htmlEscape(issueTitle) : "<a href=\"\(htmlEscape(url))\" target=\"_blank\">\(htmlEscape(issueTitle))</a>"
+        let priorityBadge = priority.isEmpty ? "" : "<span class=\"label-badge\">\(htmlEscape(priority))</span>"
+        let completionText = completion.map { "<span class=\"muted\">\($0)% done</span>" } ?? ""
+
+        return """
+            <tr>
+              <td class="mr-iid">\(iidLink)</td>
+              <td class="mr-title">\(titleContent)</td>
+              <td>\(priorityBadge) \(completionText)</td>
+            </tr>
+        """
+    }.joined(separator: "\n")
+
+    return """
+    <div class="analysis-card analysis-card--\(accent)">
+      <h3>\(htmlEscape(title))</h3>
       <table class="mr-table">
         <thead><tr><th>Issue</th><th>Title</th><th>Priority</th></tr></thead>
         <tbody>
@@ -286,7 +327,6 @@ private func appendMarkdownLine(_ line: String, to html: inout [String], inList:
         html.append("<li>\(inlineMarkdown(String(line.dropFirst(2))))</li>")
     } else if line.trimmingCharacters(in: .whitespaces).isEmpty {
         closeListIfNeeded(&html, inList: &inList)
-        html.append("<br>")
     } else {
         closeListIfNeeded(&html, inList: &inList)
         html.append("<p>\(inlineMarkdown(line))</p>")
