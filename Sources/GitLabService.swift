@@ -25,70 +25,34 @@ struct GitLabService: DataSourceService {
     // MARK: - Protocol: fetch
 
     mutating func fetch(config: Config, shell: @escaping ShellRunner) async throws {
-        // Parse reference date from config for deterministic age computation in tests.
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         formatter.timeZone = TimeZone(identifier: "UTC")
-        if let d = formatter.date(from: config.todayDate) {
-            referenceDate = d
+        if let parsedDate = formatter.date(from: config.todayDate) {
+            referenceDate = parsedDate
         }
 
         let outputs = await fetchAllGitLab(config: config, shell: shell)
+        let parsed = try parseFetchOutputs(outputs)
 
-        var nonDraftMRs: [MR] = []
-        var draftMRs: [MR] = []
-        var sandcastleMRs: [MR] = []
-        var reviewerMRs: [MR] = []
-        var assignedMRs: [MR] = []
-        var issuesList: [Issue] = []
-        var allIssuesList: [Issue] = []
-        var descriptions: [Int: String] = [:]
-        var worktreesList: [String] = []
-        var mergedBranchesList: [String] = []
-        var errors: [String] = []
-
-        for output in outputs {
-            switch output {
-            case let .nonDraftMRs(mrs): nonDraftMRs = mrs
-            case let .draftMRs(mrs): draftMRs = mrs
-            case let .sandcastleMRs(mrs): sandcastleMRs = mrs
-            case let .reviewerMRs(mrs): reviewerMRs = mrs
-            case let .assignedMRs(mrs): assignedMRs = mrs
-            case let .issues(open, descs, all):
-                issuesList = open
-                descriptions = descs
-                allIssuesList = all
-            case let .worktrees(dirs): worktreesList = dirs
-            case let .mergedBranches(b): mergedBranchesList = b
-            case let .failed(desc): errors.append(desc)
-            }
-        }
-
-        if errors.count >= 4 {
-            throw GitLabFetchError.tooManyFailures(errors)
-        }
-
-        let worktreeSet = Set(worktreesList)
-        let filteredBranches = mergedBranchesList.filter { branch in
-            let name = branch
-                .split(separator: "/", maxSplits: 1)
-                .last
-                .map(String.init) ?? branch
+        let worktreeSet = Set(parsed.worktrees)
+        let filteredBranches = parsed.mergedBranches.filter { branch in
+            let name = branch.split(separator: "/", maxSplits: 1).last.map(String.init) ?? branch
             return worktreeSet.contains(name)
         }
 
         fetchedState = State(
-            nonDraftMrs: nonDraftMRs,
-            draftMrs: draftMRs,
-            sandcastleMrs: sandcastleMRs,
-            reviewerMrs: reviewerMRs,
-            assignedMrs: assignedMRs,
-            issues: issuesList,
-            worktrees: worktreesList,
+            nonDraftMrs: parsed.nonDraftMRs,
+            draftMrs: parsed.draftMRs,
+            sandcastleMrs: parsed.sandcastleMRs,
+            reviewerMrs: parsed.reviewerMRs,
+            assignedMrs: parsed.assignedMRs,
+            issues: parsed.issues,
+            worktrees: parsed.worktrees,
             mergedBranches: filteredBranches
         )
-        issueDescriptions = descriptions
-        allIssues = allIssuesList
+        issueDescriptions = parsed.descriptions
+        allIssues = parsed.allIssues
     }
 
     // MARK: - Protocol: diff
@@ -284,6 +248,65 @@ private func fetchSource(
     }
 }
 
+private struct ParsedFetchOutputs {
+    var nonDraftMRs: [MR] = []
+    var draftMRs: [MR] = []
+    var sandcastleMRs: [MR] = []
+    var reviewerMRs: [MR] = []
+    var assignedMRs: [MR] = []
+    var issues: [Issue] = []
+    var allIssues: [Issue] = []
+    var descriptions: [Int: String] = [:]
+    var worktrees: [String] = []
+    var mergedBranches: [String] = []
+
+    mutating func apply(_ output: FetchOutput, errors: inout [String]) {
+        switch output {
+        case let .nonDraftMRs(mrs): nonDraftMRs = mrs
+        case let .draftMRs(mrs): draftMRs = mrs
+        case let .sandcastleMRs(mrs): sandcastleMRs = mrs
+        case let .reviewerMRs(mrs): reviewerMRs = mrs
+        case let .assignedMRs(mrs): assignedMRs = mrs
+        case let .issues(open, descs, all):
+            issues = open
+            descriptions = descs
+            allIssues = all
+        case let .worktrees(dirs): worktrees = dirs
+        case let .mergedBranches(branches): mergedBranches = branches
+        case let .failed(desc): errors.append(desc)
+        }
+    }
+}
+
+private func parseFetchOutputs(_ outputs: [FetchOutput]) throws -> ParsedFetchOutputs {
+    var parsed = ParsedFetchOutputs()
+    var errors: [String] = []
+    for output in outputs {
+        parsed.apply(output, errors: &errors)
+    }
+    if errors.count >= 4 {
+        throw GitLabFetchError.tooManyFailures(errors)
+    }
+    return parsed
+}
+
+private func fetchIssues(config: Config, shell: ShellRunner) -> FetchOutput {
+    do {
+        let out = try shell("glab issue list -O json --per-page 100 --all", config.studioDir)
+        let rawIssues: [RawIssue] = decodeArray(out)
+        let all = rawIssues.map { mapRawIssue($0) }
+        let open = all.filter { ($0.state ?? "opened") == "opened" }
+        var descriptions: [Int: String] = [:]
+        for raw in rawIssues where raw.description != nil && !raw.description!.isEmpty {
+            descriptions[raw.iid] = raw.description!
+        }
+        return .issues(open: open, descriptions: descriptions, all: all)
+    } catch {
+        fputs("Warning: failed to fetch issues — \(error)\n", stderr)
+        return .failed("\(error)")
+    }
+}
+
 private func fetchAllGitLab(config: Config, shell: @escaping ShellRunner) async -> [FetchOutput] {
     await withTaskGroup(of: FetchOutput.self) { group in
         group.addTask {
@@ -309,52 +332,32 @@ private func fetchAllGitLab(config: Config, shell: @escaping ShellRunner) async 
         }
 
         group.addTask {
-            fetchSource(
-                "glab mr list --author=\(config.triageAuthor) -F json --per-page 50 --repo ericmasiello/sandcastle-studio",
-                dir: config.studioDir,
-                label: "sandcastle MRs",
-                runShell: shell
-            ) { out in
+            let author = config.triageAuthor
+            let cmd = "glab mr list --author=\(author) -F json --per-page 50 --repo ericmasiello/sandcastle-studio"
+            return fetchSource(cmd, dir: config.studioDir, label: "sandcastle MRs", runShell: shell) { out in
                 .sandcastleMRs((decodeArray(out) as [RawMR]).map { mapRawMR($0) })
             }
         }
 
         group.addTask {
-            fetchSource(
-                "glab api \"merge_requests?scope=all&reviewer_username=\(config.triageAuthor)&state=opened&per_page=100\"",
-                dir: nil, label: "reviewer MRs", runShell: shell
-            ) { out in
+            let author = config.triageAuthor
+            let cmd =
+                "glab api \"merge_requests?scope=all&reviewer_username=\(author)&state=opened&per_page=100\""
+            return fetchSource(cmd, dir: nil, label: "reviewer MRs", runShell: shell) { out in
                 .reviewerMRs((decodeArray(out) as [RawMR]).map { mapRawMR($0) })
             }
         }
 
         group.addTask {
-            fetchSource(
-                "glab api \"merge_requests?scope=all&assignee_username=\(config.triageAuthor)&state=opened&per_page=100\"",
-                dir: nil, label: "assigned MRs", runShell: shell
-            ) { out in
+            let author = config.triageAuthor
+            let cmd =
+                "glab api \"merge_requests?scope=all&assignee_username=\(author)&state=opened&per_page=100\""
+            return fetchSource(cmd, dir: nil, label: "assigned MRs", runShell: shell) { out in
                 .assignedMRs((decodeArray(out) as [RawMR]).map { mapRawMR($0) })
             }
         }
 
-        group.addTask {
-            do {
-                let out = try shell("glab issue list -O json --per-page 100 --all", config.studioDir)
-                let rawIssues: [RawIssue] = decodeArray(out)
-                let all = rawIssues.map { mapRawIssue($0) }
-                let open = all.filter { ($0.state ?? "opened") == "opened" }
-                var descriptions: [Int: String] = [:]
-                for raw in rawIssues {
-                    if let desc = raw.description, !desc.isEmpty {
-                        descriptions[raw.iid] = desc
-                    }
-                }
-                return .issues(open: open, descriptions: descriptions, all: all)
-            } catch {
-                fputs("Warning: failed to fetch issues — \(error)\n", stderr)
-                return .failed("\(error)")
-            }
-        }
+        group.addTask { fetchIssues(config: config, shell: shell) }
 
         group.addTask {
             let worktreePath = (config.studioDir as NSString).appendingPathComponent(".worktrees")
@@ -364,10 +367,10 @@ private func fetchAllGitLab(config: Config, shell: @escaping ShellRunner) async 
         }
 
         group.addTask {
-            let rawDefault = (try? shell(
-                "git -C '\(config.studioDir)' symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@'",
-                nil
-            )) ?? ""
+            let dir = config.studioDir
+            let symrefCmd = "git -C '\(dir)' symbolic-ref refs/remotes/origin/HEAD 2>/dev/null"
+                + " | sed 's@^refs/remotes/origin/@@'"
+            let rawDefault = (try? shell(symrefCmd, nil)) ?? ""
             let defaultBranch = rawDefault.trimmingCharacters(in: .whitespacesAndNewlines)
             let branch = defaultBranch.isEmpty ? "master" : defaultBranch
 
@@ -393,8 +396,8 @@ private func fetchAllGitLab(config: Config, shell: @escaping ShellRunner) async 
 // MARK: - Diff internals
 
 private func diffMRs(_ changes: inout [String], label: String, cached: [MR], fresh: [MR]) {
-    let cachedByIID = Dictionary(cached.map { ($0.iid, $0) }, uniquingKeysWith: { _, b in b })
-    let freshByIID = Dictionary(fresh.map { ($0.iid, $0) }, uniquingKeysWith: { _, b in b })
+    let cachedByIID = Dictionary(cached.map { ($0.iid, $0) }) { _, latest in latest }
+    let freshByIID = Dictionary(fresh.map { ($0.iid, $0) }) { _, latest in latest }
 
     let cachedIIDs = Set(cachedByIID.keys)
     let freshIIDs = Set(freshByIID.keys)
@@ -412,24 +415,24 @@ private func diffMRs(_ changes: inout [String], label: String, cached: [MR], fre
         let new = freshByIID[iid]!
 
         if old.detailedMergeStatus != new.detailedMergeStatus {
-            changes.append(
-                "\(label) !\(iid): detailed_merge_status changed \(old.detailedMergeStatus ?? "null") → \(new.detailedMergeStatus ?? "null")"
-            )
+            let from = old.detailedMergeStatus ?? "null"
+            let to = new.detailedMergeStatus ?? "null"
+            changes.append("\(label) !\(iid): detailed_merge_status changed \(from) → \(to)")
         }
         if old.hasConflicts != new.hasConflicts {
-            changes.append(
-                "\(label) !\(iid): has_conflicts changed \(describeOptional(old.hasConflicts)) → \(describeOptional(new.hasConflicts))"
-            )
+            let from = describeOptional(old.hasConflicts)
+            let to = describeOptional(new.hasConflicts)
+            changes.append("\(label) !\(iid): has_conflicts changed \(from) → \(to)")
         }
         if old.userNotesCount != new.userNotesCount {
-            changes.append(
-                "\(label) !\(iid): user_notes_count changed \(describeOptional(old.userNotesCount)) → \(describeOptional(new.userNotesCount))"
-            )
+            let from = describeOptional(old.userNotesCount)
+            let to = describeOptional(new.userNotesCount)
+            changes.append("\(label) !\(iid): user_notes_count changed \(from) → \(to)")
         }
         if old.labels != new.labels {
-            changes.append(
-                "\(label) !\(iid): labels changed [\(old.labels.joined(separator: ", "))] → [\(new.labels.joined(separator: ", "))]"
-            )
+            let from = old.labels.joined(separator: ", ")
+            let to = new.labels.joined(separator: ", ")
+            changes.append("\(label) !\(iid): labels changed [\(from)] → [\(to)]")
         }
     }
 }
@@ -440,8 +443,8 @@ private func diffIssues(
     cached: [Issue],
     fresh: [Issue]
 ) {
-    let cachedByIID = Dictionary(cached.map { ($0.iid, $0) }, uniquingKeysWith: { _, b in b })
-    let freshByIID = Dictionary(fresh.map { ($0.iid, $0) }, uniquingKeysWith: { _, b in b })
+    let cachedByIID = Dictionary(cached.map { ($0.iid, $0) }) { _, latest in latest }
+    let freshByIID = Dictionary(fresh.map { ($0.iid, $0) }) { _, latest in latest }
 
     let cachedIIDs = Set(cachedByIID.keys)
     let freshIIDs = Set(freshByIID.keys)
@@ -480,15 +483,13 @@ private func diffIssues(
         }
     }
 
-    for iid in freshIIDs.subtracting(cachedIIDs) {
-        if freshByIID[iid]!.labels.contains(where: { $0.hasPrefix("p::") }) {
-            hasPriorityChange = true
-        }
+    for iid in freshIIDs.subtracting(cachedIIDs)
+        where freshByIID[iid]!.labels.contains(where: { $0.hasPrefix("p::") }) {
+        hasPriorityChange = true
     }
-    for iid in cachedIIDs.subtracting(freshIIDs) {
-        if cachedByIID[iid]!.labels.contains(where: { $0.hasPrefix("p::") }) {
-            hasPriorityChange = true
-        }
+    for iid in cachedIIDs.subtracting(freshIIDs)
+        where cachedByIID[iid]!.labels.contains(where: { $0.hasPrefix("p::") }) {
+        hasPriorityChange = true
     }
 }
 
@@ -590,48 +591,85 @@ private func computeAnalysis(
     allIssues: [Issue],
     referenceDate: Date
 ) -> AnalysisResult {
-    let issuesByIID = Dictionary(
-        allIssues.map { ($0.iid, $0) },
-        uniquingKeysWith: { _, b in b }
+    let issuesByIID = Dictionary(allIssues.map { ($0.iid, $0) }) { _, latest in latest }
+    let entries = buildPRDHierarchy(issueDescriptions: issueDescriptions, issuesByIID: issuesByIID)
+    let tiers = computeIssueTiers(openIssues: snapshot.issues, entries: entries)
+    let tier2 = tiers.tier2
+    let tier3 = tiers.tier3
+    let childToPRDIid = tiers.childToPRDIid
+    let tier1 = rankTier1MRs(snapshot.nonDraftMrs, referenceDate: referenceDate)
+    let reviewQueue = buildReviewQueue(
+        reviewerMrs: snapshot.reviewerMrs,
+        assignedMrs: snapshot.assignedMrs,
+        referenceDate: referenceDate
     )
 
-    var parentToChildren: [Int: [Int]] = [:]
+    let mergedShortNames = Set(snapshot.mergedBranches.compactMap { branch -> String? in
+        branch.split(separator: "/", maxSplits: 1).last.map(String.init)
+    })
+    let staleWorktrees: [StaleWorktree] = snapshot.worktrees
+        .filter { mergedShortNames.contains($0) }
+        .map { StaleWorktree(path: $0, reason: "branch_merged") }
 
+    let recommendation = computeRecommendationString(
+        tier1: tier1,
+        tier2: tier2,
+        tier3: tier3,
+        childToPRDIid: childToPRDIid,
+        issuesByIID: issuesByIID
+    )
+
+    return AnalysisResult(
+        prdHierarchy: entries,
+        tier1Mrs: tier1,
+        reviewQueue: reviewQueue,
+        tier2Issues: tier2,
+        tier3Issues: tier3,
+        staleWorktrees: staleWorktrees,
+        recommendation: recommendation
+    )
+}
+
+private func buildPRDHierarchy(
+    issueDescriptions: [Int: String],
+    issuesByIID: [Int: Issue]
+) -> [PRDHierarchyEntry] {
+    var parentToChildren: [Int: [Int]] = [:]
     for (iid, description) in issueDescriptions {
         for parentIID in parseParentReferences(description) {
             parentToChildren[parentIID, default: []].append(iid)
         }
     }
 
-    var entries: [PRDHierarchyEntry] = []
-
-    for prdIID in parentToChildren.keys.sorted() {
+    return parentToChildren.keys.sorted().map { prdIID in
         let childIIDs = parentToChildren[prdIID]!.sorted()
         let title = issuesByIID[prdIID]?.title ?? "Unknown issue #\(prdIID)"
-
         let children: [ChildInfo] = childIIDs.map { childIID in
-            let state: String = if let issue = issuesByIID[childIID] {
-                issue.state ?? "opened"
-            } else {
-                "closed"
-            }
+            let state = issuesByIID[childIID]?.state ?? "closed"
             return ChildInfo(iid: childIID, state: state)
         }
-
         let closedCount = children.filter { $0.state == "closed" }.count
         let total = children.count
         let percentage = total > 0 ? (closedCount * 100) / total : 0
-
-        entries.append(PRDHierarchyEntry(
+        return PRDHierarchyEntry(
             prdIid: prdIID,
             title: title,
             children: children,
             completion: CompletionInfo(closed: closedCount, total: total, percentage: percentage)
-        ))
+        )
     }
+}
 
-    // MARK: Tiering — child IID → best (highest) workstream completion %
+private struct IssueTierResult {
+    var tier2: [TierIssue]
+    var tier3: [TierIssue]
+    var childToPRDIid: [Int: Int]
+}
 
+private func computeIssueTiers(
+    openIssues: [Issue],
+    entries: [PRDHierarchyEntry]
+) -> IssueTierResult {
     var childToCompletion: [Int: Int] = [:]
     var childToPRDIid: [Int: Int] = [:]
     for entry in entries {
@@ -645,19 +683,11 @@ private func computeAnalysis(
     }
 
     let prdIIDs = Set(entries.map(\.prdIid))
-
-    let openIssues = snapshot.issues
-
     var tier2: [TierIssue] = []
     var tier3: [TierIssue] = []
 
-    for issue in openIssues {
-        if prdIIDs.contains(issue.iid) {
-            continue
-        }
-
-        let priority = issue.labels.first(where: { $0.hasPrefix("p::") })
-
+    for issue in openIssues where !prdIIDs.contains(issue.iid) {
+        let priority = issue.labels.first { $0.hasPrefix("p::") }
         if let completion = childToCompletion[issue.iid], completion >= 80 {
             tier2.append(TierIssue(
                 iid: issue.iid,
@@ -679,55 +709,55 @@ private func computeAnalysis(
         }
     }
 
-    let sortTier = { (a: TierIssue, b: TierIssue) -> Bool in
-        let rankA = priorityRank(a.priority)
-        let rankB = priorityRank(b.priority)
-        if rankA != rankB {
-            return rankA < rankB
-        }
-        return a.iid < b.iid
+    let sortByPriority = { (lhs: TierIssue, rhs: TierIssue) -> Bool in
+        let rankLhs = priorityRank(lhs.priority)
+        let rankRhs = priorityRank(rhs.priority)
+        return rankLhs != rankRhs ? rankLhs < rankRhs : lhs.iid < rhs.iid
     }
+    tier2.sort(by: sortByPriority)
+    tier3.sort(by: sortByPriority)
 
-    tier2.sort(by: sortTier)
-    tier3.sort(by: sortTier)
+    return IssueTierResult(tier2: tier2, tier3: tier3, childToPRDIid: childToPRDIid)
+}
 
-    // MARK: Tier 1 — MR ranking
-
+private func rankTier1MRs(_ mrs: [MR], referenceDate: Date) -> [Tier1MR] {
     let isoFormatter = ISO8601DateFormatter()
-    var tier1: [Tier1MR] = snapshot.nonDraftMrs.map { mr in
+    var tier1: [Tier1MR] = mrs.map { mr in
         let status = reviewStatus(for: mr)
-        let ageHours: Int = if let created = mr.createdAt, let createdDate = isoFormatter.date(from: created) {
+        let ageHours: Int = if let created = mr.createdAt,
+                               let createdDate = isoFormatter.date(from: created) {
             max(0, Int(referenceDate.timeIntervalSince(createdDate) / 3600))
         } else {
             0
         }
         return Tier1MR(iid: mr.iid, title: mr.title, reviewStatus: status, ageHours: ageHours)
     }
-
-    tier1.sort { a, b in
-        let rankA = reviewStatusRank(a.reviewStatus)
-        let rankB = reviewStatusRank(b.reviewStatus)
-        if rankA != rankB {
-            return rankA < rankB
-        }
-        return a.ageHours > b.ageHours
+    tier1.sort { lhs, rhs in
+        let rankLhs = reviewStatusRank(lhs.reviewStatus)
+        let rankRhs = reviewStatusRank(rhs.reviewStatus)
+        return rankLhs != rankRhs ? rankLhs < rankRhs : lhs.ageHours > rhs.ageHours
     }
+    return tier1
+}
 
-    // MARK: Review queue — cross-repo MRs where the user is reviewer or assignee
+private func buildReviewQueue(
+    reviewerMrs: [MR],
+    assignedMrs: [MR],
+    referenceDate: Date
+) -> [ReviewQueueMR] {
+    let isoFormatter = ISO8601DateFormatter()
+    var byURL: [String: ReviewQueueMR] = [:]
 
-    // Deduplicate by web_url so an MR where the user is both reviewer and assignee appears once,
-    // with role "reviewer+assignee".
-    var reviewQueueByURL: [String: ReviewQueueMR] = [:]
-
-    let addToReviewQueue = { (mr: MR, role: String) in
+    let enqueue = { (mr: MR, role: String) in
         let key = mr.webUrl ?? "\(mr.iid)"
-        let ageHours: Int = if let created = mr.createdAt, let createdDate = isoFormatter.date(from: created) {
+        let ageHours: Int = if let created = mr.createdAt,
+                               let createdDate = isoFormatter.date(from: created) {
             max(0, Int(referenceDate.timeIntervalSince(createdDate) / 3600))
         } else {
             0
         }
-        if let existing = reviewQueueByURL[key] {
-            reviewQueueByURL[key] = ReviewQueueMR(
+        if let existing = byURL[key] {
+            byURL[key] = ReviewQueueMR(
                 iid: existing.iid,
                 title: existing.title,
                 repo: existing.repo,
@@ -736,7 +766,7 @@ private func computeAnalysis(
                 webUrl: existing.webUrl
             )
         } else {
-            reviewQueueByURL[key] = ReviewQueueMR(
+            byURL[key] = ReviewQueueMR(
                 iid: mr.iid,
                 title: mr.title,
                 repo: mr.repoPath ?? "unknown",
@@ -747,42 +777,10 @@ private func computeAnalysis(
         }
     }
 
-    for mr in snapshot.reviewerMrs { addToReviewQueue(mr, "reviewer") }
-    for mr in snapshot.assignedMrs { addToReviewQueue(mr, "assignee") }
+    for mr in reviewerMrs { enqueue(mr, "reviewer") }
+    for mr in assignedMrs { enqueue(mr, "assignee") }
 
-    let reviewQueue = reviewQueueByURL.values
-        .sorted { a, b in a.ageHours > b.ageHours }
-
-    // MARK: Stale worktrees
-
-    let mergedBranchShortNames = Set(snapshot.mergedBranches.compactMap { branch -> String? in
-        branch.split(separator: "/", maxSplits: 1).last.map(String.init)
-    })
-
-    let staleWorktrees: [StaleWorktree] = snapshot.worktrees
-        .filter { mergedBranchShortNames.contains($0) }
-        .map { StaleWorktree(path: $0, reason: "branch_merged") }
-
-    // MARK: Recommendation
-
-    let recommendation = computeRecommendationString(
-        tier1: tier1,
-        tier2: tier2,
-        tier3: tier3,
-        entries: entries,
-        childToPRDIid: childToPRDIid,
-        issuesByIID: issuesByIID
-    )
-
-    return AnalysisResult(
-        prdHierarchy: entries,
-        tier1Mrs: tier1,
-        reviewQueue: reviewQueue,
-        tier2Issues: tier2,
-        tier3Issues: tier3,
-        staleWorktrees: staleWorktrees,
-        recommendation: recommendation
-    )
+    return byURL.values.sorted { lhs, rhs in lhs.ageHours > rhs.ageHours }
 }
 
 // MARK: - Description parsing
@@ -811,7 +809,6 @@ private func computeRecommendationString(
     tier1: [Tier1MR],
     tier2: [TierIssue],
     tier3: [TierIssue],
-    entries _: [PRDHierarchyEntry],
     childToPRDIid: [Int: Int],
     issuesByIID: [Int: Issue]
 ) -> String {
@@ -918,11 +915,11 @@ private func extractAllIIDs(from text: String) -> [Int] {
     return results
 }
 
-private func parseLeadingInt(_ s: String) -> Int? {
-    var end = s.startIndex
-    while end < s.endIndex && s[end].isNumber {
-        end = s.index(after: end)
+private func parseLeadingInt(_ str: String) -> Int? {
+    var end = str.startIndex
+    while end < str.endIndex && str[end].isNumber {
+        end = str.index(after: end)
     }
-    guard end > s.startIndex else { return nil }
-    return Int(s[s.startIndex ..< end])
+    guard end > str.startIndex else { return nil }
+    return Int(str[str.startIndex ..< end])
 }

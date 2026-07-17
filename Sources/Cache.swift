@@ -3,9 +3,9 @@ import Foundation
 // MARK: - JSON helpers
 
 private func makeDecoder() -> JSONDecoder {
-    let d = JSONDecoder()
-    d.keyDecodingStrategy = .convertFromSnakeCase
-    return d
+    let decoder = JSONDecoder()
+    decoder.keyDecodingStrategy = .convertFromSnakeCase
+    return decoder
 }
 
 private func makeEncoder() -> JSONEncoder {
@@ -88,7 +88,7 @@ func saveReport(_ reportText: String, config: Config) throws {
         throw SaveReportError.cacheCorrupt(path: config.cachePath)
     }
 
-    var recommendation: String? = nil
+    var recommendation: String?
     for line in reportText.components(separatedBy: "\n").reversed() {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         if trimmed.lowercased().contains("my recommendation:") {

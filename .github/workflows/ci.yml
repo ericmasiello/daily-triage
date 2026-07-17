@@ -33,4 +33,4 @@ jobs:
           git diff --exit-code Sources/
 
       - name: Lint
-        run: swiftlint lint --quiet --lenient Sources/
+        run: swiftlint lint --quiet --strict Sources/

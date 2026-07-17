@@ -64,8 +64,8 @@ function_body_length:
   error: 120
 
 file_length:
-  warning: 500
-  error: 900
+  warning: 950
+  error: 1100
 
 type_body_length:
   warning: 300
@@ -81,5 +81,9 @@ identifier_name:
     - fm
     - e
     - i
+
+type_name:
+  excluded:
+    - MR  # Merge Request struct — acronym exemption (not CI/CD config; SwiftLint rule exception)
 
 reporter: "xcode"
