@@ -23,6 +23,22 @@ elif [[ "$args" == *"api"*"reviewer_username"* ]]; then
   cat "$FIXTURE_DIR/${FIXTURE_SET}/reviewer_mrs.json"
 elif [[ "$args" == *"api"*"assignee_username"* ]]; then
   cat "$FIXTURE_DIR/${FIXTURE_SET}/assigned_mrs.json"
+elif [[ "$args" == *"api"*"projects/"* ]]; then
+  # Archive-status lookup: glab api "projects/<url-encoded-path>"
+  # Decode the path, check it against the fixture's archived-repo list (if any),
+  # and return a minimal GitLab Project API response.
+  encoded_path=$(echo "$args" | grep -oE 'projects/[^"[:space:]]*' | sed 's|^projects/||')
+  decoded_path=$(python3 -c "import urllib.parse, sys; print(urllib.parse.unquote(sys.argv[1]))" "$encoded_path")
+  archived_file="$FIXTURE_DIR/${FIXTURE_SET}/archived_projects.json"
+  is_archived="false"
+  if [[ -f "$archived_file" ]] && python3 -c "
+import json, sys
+archived = json.load(open('$archived_file'))
+sys.exit(0 if '$decoded_path' in archived else 1)
+" 2>/dev/null; then
+    is_archived="true"
+  fi
+  printf '{"path_with_namespace": "%s", "archived": %s}\n' "$decoded_path" "$is_archived"
 elif [[ "$args" == *"issue list"* ]]; then
   cat "$FIXTURE_DIR/${FIXTURE_SET}/issues.json"
 elif [[ "$args" == *"auth status"* ]]; then

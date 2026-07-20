@@ -1,0 +1,17 @@
+[
+  {
+    "iid": 300,
+    "title": "Update API documentation",
+    "draft": false,
+    "source_branch": "docs/api-update",
+    "created_at": "2026-05-15T10:00:00Z",
+    "updated_at": "2026-05-20T14:00:00Z",
+    "web_url": "https://gitlab.com/vistaprint-org/design-technology/studio/studio/-/merge_requests/300",
+    "labels": [],
+    "detailed_merge_status": "mergeable",
+    "user_notes_count": 0,
+    "has_conflicts": false,
+    "reviewers": [],
+    "references": {"full": "vistaprint-org/design-technology/studio/studio!300"}
+  }
+]

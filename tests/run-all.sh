@@ -13,7 +13,7 @@ MOCK_DIR="$SCRIPT_DIR/mocks"
 FIXTURE_DIR="$SCRIPT_DIR/fixtures"
 
 RESULT_DIR="$(mktemp -d)"
-TOTAL=26
+TOTAL=27
 
 # Colors
 GREEN='\033[0;32m'
@@ -1030,6 +1030,56 @@ assert repos[200] == 'vistaprint-org/ai-engineering/ai-coding-guide', f'iid 200 
 assert repos[300] == 'vistaprint-org/design-technology/studio/studio', f'iid 300 repo wrong: {repos[300]}'
 " 2>/dev/null; then
     fail "review_queue content incorrect in ANALYSIS"
+    ok=false
+  fi
+
+  $ok && pass
+)
+teardown_test
+
+# ── Test 27: Archived-repo MRs excluded from RAW_DATA and review_queue ──────
+
+setup_test "27. Archived-repo MRs excluded from output"
+(
+  export MOCK_FIXTURE_SET="archived-repo"
+
+  stdout=$("$BINARY" 2>/dev/null)
+  exit_code=$?
+  ok=true
+
+  assert_exit_code "$exit_code" "0" || ok=false
+  assert_stdout_contains "$stdout" "MODE: FULL" || ok=false
+
+  raw_data=$(echo "$stdout" | sed -n '/---RAW_DATA---/,/---END_RAW_DATA---/p' | grep -v '^---')
+
+  # reviewer_mrs iid 200 lives in the archived ai-coding-guide repo and must be dropped;
+  # assigned_mrs iid 300 lives in the non-archived studio repo and must survive.
+  if ! echo "$raw_data" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+rev = data['reviewer_mrs']
+asgn = data['assigned_mrs']
+assert len(rev) == 0, f'expected 0 reviewer_mrs (archived repo), got {len(rev)}'
+assert len(asgn) == 1, f'expected 1 assigned_mr (non-archived repo), got {len(asgn)}'
+assert asgn[0]['iid'] == 300, f'assigned_mr iid wrong: {asgn[0][\"iid\"]}'
+" 2>/dev/null; then
+    fail "archived-repo MR filtering incorrect in RAW_DATA"
+    ok=false
+  fi
+
+  analysis_json=$(echo "$stdout" | sed -n '/---ANALYSIS---/,/---END_ANALYSIS---/p' | grep -v '^---')
+
+  # review_queue is built from reviewer_mrs + assigned_mrs, so it must reflect the
+  # same filtering: only the assignee entry (iid 300) should remain.
+  if ! echo "$analysis_json" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+rq = data['review_queue']
+assert len(rq) == 1, f'expected 1 review_queue item, got {len(rq)}'
+assert rq[0]['iid'] == 300, f'review_queue iid wrong: {rq[0][\"iid\"]}'
+assert rq[0]['role'] == 'assignee', f'review_queue role wrong: {rq[0][\"role\"]}'
+" 2>/dev/null; then
+    fail "review_queue not filtered for archived repo"
     ok=false
   fi
 
