@@ -542,6 +542,7 @@ private struct Tier1MR: Codable {
     let title: String
     let reviewStatus: String
     let ageHours: Int
+    let webUrl: String?
 }
 
 private struct ReviewQueueMR: Codable {
@@ -730,7 +731,7 @@ private func rankTier1MRs(_ mrs: [MR], referenceDate: Date) -> [Tier1MR] {
         } else {
             0
         }
-        return Tier1MR(iid: mr.iid, title: mr.title, reviewStatus: status, ageHours: ageHours)
+        return Tier1MR(iid: mr.iid, title: mr.title, reviewStatus: status, ageHours: ageHours, webUrl: mr.webUrl)
     }
     tier1.sort { lhs, rhs in
         let rankLhs = reviewStatusRank(lhs.reviewStatus)
