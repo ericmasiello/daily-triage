@@ -35,6 +35,15 @@ struct GitLabService: DataSourceService {
         let outputs = await fetchAllGitLab(config: config, shell: shell)
         let parsed = try parseFetchOutputs(outputs)
 
+        let repoPaths = collectRepoPaths(
+            parsed.nonDraftMRs,
+            parsed.draftMRs,
+            parsed.sandcastleMRs,
+            parsed.reviewerMRs,
+            parsed.assignedMRs
+        )
+        let archivedRepoPaths = await fetchArchivedRepoPaths(repoPaths, shell: shell)
+
         let worktreeSet = Set(parsed.worktrees)
         let filteredBranches = parsed.mergedBranches.filter { branch in
             let name = branch.split(separator: "/", maxSplits: 1).last.map(String.init) ?? branch
@@ -42,11 +51,11 @@ struct GitLabService: DataSourceService {
         }
 
         fetchedState = State(
-            nonDraftMrs: parsed.nonDraftMRs,
-            draftMrs: parsed.draftMRs,
-            sandcastleMrs: parsed.sandcastleMRs,
-            reviewerMrs: parsed.reviewerMRs,
-            assignedMrs: parsed.assignedMRs,
+            nonDraftMrs: filterArchivedMRs(parsed.nonDraftMRs, archivedRepoPaths: archivedRepoPaths),
+            draftMrs: filterArchivedMRs(parsed.draftMRs, archivedRepoPaths: archivedRepoPaths),
+            sandcastleMrs: filterArchivedMRs(parsed.sandcastleMRs, archivedRepoPaths: archivedRepoPaths),
+            reviewerMrs: filterArchivedMRs(parsed.reviewerMRs, archivedRepoPaths: archivedRepoPaths),
+            assignedMrs: filterArchivedMRs(parsed.assignedMRs, archivedRepoPaths: archivedRepoPaths),
             issues: parsed.issues,
             worktrees: parsed.worktrees,
             mergedBranches: filteredBranches
