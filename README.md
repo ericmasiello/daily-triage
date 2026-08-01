@@ -6,6 +6,7 @@ Swift binary that fetches GitLab data for the [`eric:triage`](https://gitlab.com
 
 - macOS with Swift toolchain (ships with Xcode or Xcode Command Line Tools)
 - [`glab`](https://gitlab.com/gitlab-org/cli) CLI authenticated (`brew install glab && glab auth login`)
+- [`td`](https://github.com/Doist/todoist-cli) (Todoist CLI) authenticated (`brew install todoist-cli && td auth login`)
 - `~/Sites/studio` directory (the Studio GitLab repo clone)
 
 Install all tool dependencies at once:
@@ -14,7 +15,13 @@ Install all tool dependencies at once:
 brew bundle
 ```
 
-This installs `glab`, `swiftlint`, and `swiftformat` as declared in the `Brewfile`.
+This installs `glab`, `swiftlint`, `swiftformat`, and `todoist-cli` as declared in the `Brewfile`.
+
+Authenticate `td` once installed — this opens your browser and stores the token in your OS keychain:
+
+```bash
+td auth login
+```
 
 ## Build
 
