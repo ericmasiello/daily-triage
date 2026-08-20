@@ -1,5 +1,5 @@
 ---
-name: eric:triage
+name: daily-triage
 description: Decide what to work on right now. Runs the triage-cache binary and opens the HTML report. Use when the user says 'what should I work on', 'triage', 'prioritize', 'what's next', 'pick something up', or wants help deciding which task to tackle.
 ---
 
