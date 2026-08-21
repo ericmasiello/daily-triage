@@ -85,3 +85,17 @@ Re-run this script after adding or removing any `.swift` file in `Sources/`. The
 **After adding a new Swift source file**, you must:
 1. Re-run `./generate-compile-commands.sh`
 2. Restart the editor's LSP server (or reopen the project)
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in this repo's GitHub Issues, using the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default triage label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
