@@ -11,58 +11,45 @@ struct TriageCache {
         checkPrerequisites(config: config)
 
         let runShell: ShellRunner = { command, dir in try shell(command, workingDirectory: dir) }
+        let fetchResult = await fetchAllServices(config: config, shell: runShell)
 
-        async let glResult = fetchService(GitLabService(), config: config, shell: runShell)
-        async let tdResult = fetchService(TodoistService(), config: config, shell: runShell)
-
-        let (gitlabService, gitlabError) = await glResult
-        var (todoistService, _) = await tdResult
-
-        if let error = gitlabError, gitlabService.failurePolicy == .fatal {
-            fputs("Error: \(gitlabService.label) service failed — \(error)\n", stderr)
+        if let error = fetchResult.gitlabError, fetchResult.services.gitlab.failurePolicy == .fatal {
+            fputs("Error: \(fetchResult.services.gitlab.label) service failed — \(error)\n", stderr)
             exit(1)
+        }
+
+        var services = fetchResult.services
+
+        // Jira is .degradable like Todoist, but with one difference: it now drives the
+        // triage recommendation, so a failure with nothing cached to fall back to is
+        // treated as fatal rather than silently recommending against an empty issue set.
+        if let error = services.jira.fetchError {
+            reconcileJiraOrExit(&services.jira, error: error, config: config)
         }
 
         let forceMode = args.contains("--force")
 
         if forceMode {
-            emitFull(
-                reason: "forced",
-                gitlab: gitlabService,
-                todoist: todoistService,
-                options: outputOptions,
-                config: config
-            )
+            emitFull(reason: "forced", services: services, options: outputOptions, config: config)
             exit(0)
         }
 
         let reason = determineReason(config: config)
 
         if reason != "cache_valid" {
-            emitFull(
-                reason: reason,
-                gitlab: gitlabService,
-                todoist: todoistService,
-                options: outputOptions,
-                config: config
-            )
+            emitFull(reason: reason, services: services, options: outputOptions, config: config)
             exit(0)
         }
 
         let cache = readCache(config: config)!
-        todoistService.reconcileIfNeeded(cached: cache.snapshot)
-        let snapshot = assembleSnapshot(gitlab: gitlabService, todoist: todoistService)
-        let diff = computeDiff(services: [gitlabService, todoistService], cache: cache, snapshot: snapshot)
+        services.todoist.reconcileIfNeeded(cached: cache.snapshot)
+        let snapshot = assembleSnapshot(services: services)
+        let allServices: [any DataSourceService] = [services.gitlab, services.todoist, services.jira]
+        let diff = computeDiff(services: allServices, cache: cache, snapshot: snapshot)
         let ageMinutes = cacheAgeMinutes(cache)
 
         if diff.signals.contains(.priorityChange) {
-            emitFull(
-                reason: "priority_labels_changed",
-                gitlab: gitlabService,
-                todoist: todoistService,
-                options: outputOptions,
-                config: config
-            )
+            emitFull(reason: "priority_labels_changed", services: services, options: outputOptions, config: config)
         } else if diff.isEmpty {
             emit(
                 formatNoChanges(ageMinutes: ageMinutes, report: cache.report, recommendation: cache.recommendation),
@@ -70,7 +57,7 @@ struct TriageCache {
                 config: config
             )
         } else {
-            let recommendation = gitlabService.computeRecommendation(snapshot: snapshot)
+            let analysis = computeAnalysis(snapshot: snapshot, todayDate: config.todayDate)
             emit(
                 formatDelta(
                     ageMinutes: ageMinutes,
@@ -81,7 +68,7 @@ struct TriageCache {
                 options: outputOptions,
                 config: config
             )
-            writeCache(snapshot: snapshot, recommendation: recommendation, config: config)
+            writeCache(snapshot: snapshot, recommendation: analysis.recommendation, config: config)
         }
     }
 }
@@ -123,22 +110,58 @@ private func checkPrerequisites(config: Config) {
     }
 }
 
-private func emitFull(
-    reason: String,
-    gitlab: GitLabService,
-    todoist: TodoistService,
-    options: OutputOptions,
-    config: Config
-) {
-    let snapshot = assembleSnapshot(gitlab: gitlab, todoist: todoist)
-    let serviceLines = collectServiceLines([gitlab, todoist], snapshot: snapshot)
-    let recommendation = gitlab.computeRecommendation(snapshot: snapshot)
+/// The three data sources bundled together purely to keep call sites (emitFull,
+/// assembleSnapshot) under the parameter-count lint limit — not a meaningful domain type.
+private struct Services {
+    var gitlab: GitLabService
+    var todoist: TodoistService
+    var jira: JiraService
+}
+
+private struct FetchResult {
+    var services: Services
+    var gitlabError: Error?
+}
+
+private func fetchAllServices(config: Config, shell: @escaping ShellRunner) async -> FetchResult {
+    async let glResult = fetchService(GitLabService(), config: config, shell: shell)
+    async let tdResult = fetchService(TodoistService(), config: config, shell: shell)
+    async let jiResult = fetchService(JiraService(), config: config, shell: shell)
+
+    let (gitlabService, gitlabError) = await glResult
+    let (todoistService, _) = await tdResult
+    // Jira never actually throws from fetch() (see JiraService) — its failure is carried
+    // in `fetchError`, not this discarded tuple slot.
+    let (jiraService, _) = await jiResult
+
+    return FetchResult(
+        services: Services(gitlab: gitlabService, todoist: todoistService, jira: jiraService),
+        gitlabError: gitlabError
+    )
+}
+
+private func reconcileJiraOrExit(_ jira: inout JiraService, error: String, config: Config) {
+    let existingCache = readCache(config: config)
+    if !jira.reconcileIfNeeded(cached: existingCache?.snapshot) {
+        fputs("Error: Jira fetch failed and no cached Jira data is available — \(error)\n", stderr)
+        fputs("  Check that 'acli' is installed and authenticated.\n", stderr)
+        exit(1)
+    }
+}
+
+private func emitFull(reason: String, services: Services, options: OutputOptions, config: Config) {
+    let snapshot = assembleSnapshot(services: services)
+    let serviceLines = collectServiceLines(
+        [services.gitlab, services.todoist, services.jira],
+        snapshot: snapshot
+    )
+    let analysis = computeAnalysis(snapshot: snapshot, todayDate: config.todayDate)
     emit(
-        formatFull(reason: reason, snapshot: snapshot, serviceLines: serviceLines),
+        formatFull(reason: reason, snapshot: snapshot, serviceLines: serviceLines + formatAnalysis(analysis)),
         options: options,
         config: config
     )
-    writeCache(snapshot: snapshot, recommendation: recommendation, config: config)
+    writeCache(snapshot: snapshot, recommendation: analysis.recommendation, config: config)
 }
 
 private func computeDiff(
@@ -173,12 +196,18 @@ private func fetchService<S: DataSourceService>(
 
 // MARK: - Snapshot assembly
 
-private func assembleSnapshot(gitlab: GitLabService, todoist: TodoistService) -> Snapshot {
-    guard let state = gitlab.fetchedState else {
+private func assembleSnapshot(services: Services) -> Snapshot {
+    guard let state = services.gitlab.fetchedState else {
         fputs("Error: GitLab fetch did not produce a state\n", stderr)
         exit(1)
     }
-    return Snapshot(gitlab: state, todoist: todoist.fetchedState, todoistError: todoist.fetchError)
+    return Snapshot(
+        gitlab: state,
+        todoist: services.todoist.fetchedState,
+        todoistError: services.todoist.fetchError,
+        jira: services.jira.fetchedState,
+        jiraError: services.jira.fetchError
+    )
 }
 
 // MARK: - Service output collection

@@ -1,11 +1,16 @@
 # triage-cache
 
-Swift binary that fetches GitLab data for the [`eric:triage`](https://gitlab.com/vistaprint-org/design-technology/studio/studio/-/work_items/156) agent skill. It gathers MRs, issues, worktrees, and merged branches in parallel, outputs structured JSON for LLM consumption, and caches results to disk.
+Swift binary that fetches GitLab, Jira, and Todoist data for the [`eric:triage`](https://gitlab.com/vistaprint-org/design-technology/studio/studio/-/work_items/156) agent skill. It gathers GitLab MRs/worktrees/merged branches, Jira work items, and Todoist tasks in parallel, outputs structured JSON for LLM consumption, and caches results to disk.
+
+GitLab Issues are no longer fetched for the studio project — that issue tracking moved to
+Jira (see [Graceful Degradation](#graceful-degradation) below). GitLab MR/worktree/branch
+fetching is unaffected and stays available for wiring up other GitLab projects later.
 
 ## Prerequisites
 
 - macOS with Swift toolchain (ships with Xcode or Xcode Command Line Tools)
 - [`glab`](https://gitlab.com/gitlab-org/cli) CLI authenticated (`brew install glab && glab auth login`)
+- [`acli`](https://developer.atlassian.com/cloud/acli/) (Atlassian CLI) authenticated for Jira
 - [`td`](https://github.com/Doist/todoist-cli) (Todoist CLI) authenticated (`brew install todoist-cli && td auth login`)
 - `~/Sites/studio` directory (the Studio GitLab repo clone)
 
@@ -81,9 +86,10 @@ REASON: first_run | cache_expired | cache_corrupt | forced | priority_labels_cha
   "non_draft_mrs": [...],
   "draft_mrs": [...],
   "sandcastle_mrs": [...],
-  "issues": [...],
   "worktrees": [...],
-  "merged_branches": [...]
+  "merged_branches": [...],
+  "jira": { "all_issues": [...], "open_issues": [...] },
+  "todoist": { "overdue": [...], "today": [...], "up_next": [...] }
 }
 ---END_RAW_DATA---
 ```
@@ -131,7 +137,7 @@ Written to `~/.cache/eric-triage/last-run.json` with a 1-hour TTL. Schema:
 
 ```json
 {
-  "version": 1,
+  "version": 3,
   "timestamp": "2026-05-12T14:30:00Z",
   "ttl_seconds": 3600,
   "snapshot": { ... },
@@ -142,14 +148,19 @@ Written to `~/.cache/eric-triage/last-run.json` with a 1-hour TTL. Schema:
 
 `--save-report` updates the `report` and `recommendation` fields without re-fetching data.
 
-Cache directory and studio directory can be overridden via `TRIAGE_CACHE_DIR` and `TRIAGE_STUDIO_DIR` environment variables (used by the test suite).
+Cache directory, studio directory, and Jira project/site can be overridden via
+`TRIAGE_CACHE_DIR`, `TRIAGE_STUDIO_DIR`, `TRIAGE_JIRA_PROJECT` (default `ERICRULEZ`), and
+`TRIAGE_JIRA_SITE` (default `https://vistaprint.atlassian.net`) environment variables (also
+used by the test suite).
 
 ## Graceful Degradation
 
 - **Corrupt cache**: invalid JSON is deleted automatically and a fresh `FULL` run executes
 - **Schema mismatch**: treated as corrupt (same behavior)
 - **`glab` not found**: prints error to stderr, exits with code 1
-- **`glab` auth expired**: if 4+ data sources fail, prints error to stderr, exits with code 1
+- **`glab` auth expired**: if too little GitLab signal remains (4+ of its sub-fetches fail), prints error to stderr, exits with code 1
+- **`acli`/Jira fetch fails**: falls back to the cached Jira data and warns on stderr, like Todoist — except if there's no cached Jira data to fall back to either, since Jira now drives the triage recommendation, this prints an error and exits with code 1 rather than recommending against an empty issue set
+- **`td`/Todoist fetch fails**: falls back to the cached Todoist data and warns on stderr; Todoist never drives the recommendation, so this never exits non-zero
 
 ## Tests
 
@@ -157,7 +168,7 @@ Cache directory and studio directory can be overridden via `TRIAGE_CACHE_DIR` an
 ./tests/run-all.sh
 ```
 
-Shell-based integration suite with several test cases. Mock `glab` and `git` scripts in `tests/mocks/` isolate the binary from real API calls. Fixture data lives in `tests/fixtures/`.
+Shell-based integration suite with several test cases. Mock `glab`, `git`, `acli`, and `td` scripts in `tests/mocks/` isolate the binary from real API calls. Fixture data lives in `tests/fixtures/`.
 
 The test runner also performs static analysis after the integration tests:
 

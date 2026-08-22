@@ -20,7 +20,7 @@ private func makeEncoder() -> JSONEncoder {
 func readCache(config: Config) -> CacheEnvelope? {
     guard let data = FileManager.default.contents(atPath: config.cachePath),
           let cache = try? makeDecoder().decode(CacheEnvelope.self, from: data),
-          cache.version == 2
+          cache.version == 3
     else {
         return nil
     }
@@ -39,7 +39,7 @@ func writeCache(snapshot: Snapshot, recommendation: String? = nil, config: Confi
     let existing = readCache(config: config)
 
     let cache = CacheEnvelope(
-        version: 2,
+        version: 3,
         timestamp: ISO8601DateFormatter().string(from: Date()),
         ttlSeconds: Int(config.ttlSeconds),
         snapshot: snapshot,

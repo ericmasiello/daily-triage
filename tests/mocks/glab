@@ -23,6 +23,11 @@ elif [[ "$args" == *"api"*"reviewer_username"* ]]; then
   cat "$FIXTURE_DIR/${FIXTURE_SET}/reviewer_mrs.json"
 elif [[ "$args" == *"api"*"assignee_username"* ]]; then
   cat "$FIXTURE_DIR/${FIXTURE_SET}/assigned_mrs.json"
+elif [[ "$args" == *"issue list"* ]]; then
+  # Dead branch kept only so an unrecognized old invocation fails loudly rather than
+  # silently — GitLabService no longer fetches issues (see JiraService instead).
+  echo "mock glab: 'issue list' is no longer called by triage-cache" >&2
+  exit 1
 elif [[ "$args" == *"api"*"projects/"* ]]; then
   # Archive-status lookup: glab api "projects/<url-encoded-path>"
   # Decode the path, check it against the fixture's archived-repo list (if any),
@@ -39,8 +44,6 @@ sys.exit(0 if '$decoded_path' in archived else 1)
     is_archived="true"
   fi
   printf '{"path_with_namespace": "%s", "archived": %s}\n' "$decoded_path" "$is_archived"
-elif [[ "$args" == *"issue list"* ]]; then
-  cat "$FIXTURE_DIR/${FIXTURE_SET}/issues.json"
 elif [[ "$args" == *"auth status"* ]]; then
   echo "Logged in as testuser"
 else

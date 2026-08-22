@@ -1,0 +1,25 @@
+#!/bin/bash
+# Mock acli CLI for integration tests.
+# Returns fixture JSON based on MOCK_FIXTURE_DIR and MOCK_FIXTURE_SET env vars.
+
+FIXTURE_DIR="${MOCK_FIXTURE_DIR:?MOCK_FIXTURE_DIR must be set}"
+FIXTURE_SET="${MOCK_FIXTURE_SET:-default}"
+
+if [[ "${MOCK_ACLI_FAIL}" == "1" ]]; then
+  echo "error: not logged in — run 'acli jira auth login'" >&2
+  exit 1
+fi
+
+args="$*"
+
+if [[ "$args" == *"jira workitem search"* ]]; then
+  file="$FIXTURE_DIR/${FIXTURE_SET}/jira_issues.json"
+  if [[ -f "$file" ]]; then
+    cat "$file"
+  else
+    echo '[]'
+  fi
+else
+  echo "mock acli: unknown command: $args" >&2
+  exit 1
+fi

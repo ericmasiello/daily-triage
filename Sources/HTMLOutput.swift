@@ -261,13 +261,16 @@ private func reviewQueueTable(_ queue: [[String: Any]]) -> String {
 
 private func tierIssueTable(title: String, issues: [[String: Any]], accent: String) -> String {
     let rows = issues.map { issue -> String in
-        let iid = issue["iid"].flatMap { anyToString($0) } ?? "?"
+        // Jira issues are string-keyed (e.g. "ERICRULEZ-42"), not integer `iid`s like
+        // GitLab MRs — the key already reads clearly without a "#" prefix.
+        let key = issue["key"] as? String ?? "?"
         let issueTitle = issue["title"] as? String ?? ""
         let priority = issue["priority"] as? String ?? ""
         let completion = issue["workstream_completion"].flatMap { anyToString($0) }
         let url = issue["web_url"] as? String ?? ""
 
-        let iidLink = url.isEmpty ? "#\(iid)" : "<a href=\"\(htmlEscape(url))\" target=\"_blank\">#\(iid)</a>"
+        let escapedKey = htmlEscape(key)
+        let keyLink = url.isEmpty ? escapedKey : "<a href=\"\(htmlEscape(url))\" target=\"_blank\">\(escapedKey)</a>"
         let escapedTitle = htmlEscape(issueTitle)
         let titleContent = url.isEmpty
             ? escapedTitle
@@ -277,7 +280,7 @@ private func tierIssueTable(title: String, issues: [[String: Any]], accent: Stri
 
         return """
             <tr>
-              <td class="mr-iid">\(iidLink)</td>
+              <td class="mr-iid">\(keyLink)</td>
               <td class="mr-title">\(titleContent)</td>
               <td>\(priorityBadge) \(completionText)</td>
             </tr>
