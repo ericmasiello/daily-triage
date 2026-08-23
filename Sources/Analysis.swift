@@ -162,12 +162,10 @@ private func buildPRDHierarchy(allIssues: [JiraIssue]) -> [PRDHierarchyEntry] {
 
     return parentToChildren.keys.sorted().map { parentKey in
         let children = parentToChildren[parentKey]!.sorted { $0.key < $1.key }
-        // The parent may not have been independently returned by the search (e.g. it
-        // belongs to a different project) — fall back to the summary any child carried
-        // via its nested `parent` field, then to a generic placeholder.
-        let title = issuesByKey[parentKey]?.summary
-            ?? children.first?.parentSummary
-            ?? "Unknown issue \(parentKey)"
+        // Parent-type issues always come from the same `project = X` fetch as their
+        // children (JiraService only resolves `parent = <key>` for issues found in that
+        // same fetch), so this should always resolve — the fallback is defensive only.
+        let title = issuesByKey[parentKey]?.summary ?? "Unknown issue \(parentKey)"
         let childInfos = children.map { ChildInfo(key: $0.key, status: $0.status) }
         let closedCount = children.filter { isJiraIssueDone($0.status) }.count
         let total = children.count

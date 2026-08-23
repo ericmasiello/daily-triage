@@ -10,14 +10,11 @@ struct JiraIssue: Codable, Equatable {
     let status: String
     let priority: String?
     let issueType: String?
-    /// Key of the parent work item (e.g. an Epic), if any.
+    /// Key of the parent work item (e.g. a Workstream), if any. `acli`'s `search --fields`
+    /// doesn't allow requesting `parent` directly (see JiraService.fetch) — this is filled
+    /// in afterward from a separate `parent = <key>` JQL lookup per parent-type issue, so
+    /// it's always resolvable against this same fetch's `allIssues` by key.
     let parentKey: String?
-    /// Summary of the parent, when the search response included nested parent fields.
-    /// Used as a hierarchy-title fallback when the parent itself wasn't independently
-    /// returned by the search (e.g. it belongs to a different project).
-    let parentSummary: String?
-    let createdAt: String?
-    let updatedAt: String?
     let webUrl: String
 }
 
@@ -45,14 +42,26 @@ struct JiraService: DataSourceService {
         // `fetchIssues` semantics: the PRD-hierarchy/completion math needs full
         // visibility into every work item in the project, not just the ones
         // assigned to the current user.
-        let jql = "project = \(config.jiraProject)"
-        let fields = "key,summary,status,priority,issuetype,parent,created,updated"
-        let command = "acli jira workitem search --jql \"\(jql)\" --fields \"\(fields)\" --paginate --json"
+        //
+        // `acli jira workitem search --fields` only allows a small set of simple fields
+        // (key, summary, status, priority, issuetype, assignee, labels, description,
+        // reporter) — relational fields like `parent`, `created`, and `updated` are
+        // rejected outright ("field 'parent' is not allowed"), even though `acli`'s own
+        // docs/examples suggest otherwise. Parent info instead comes from a second pass:
+        // for every issue whose type looks like a workstream/epic, run a `parent = <key>`
+        // JQL search to find its children (see fetchParentAssignments below).
+        //
         // Caught internally (not rethrown), matching TodoistService's convention: failure
         // is signaled via `fetchError`, which `reconcileIfNeeded` inspects — not via `throws`.
+        let jql = "project = \(config.jiraProject)"
+        let fields = "key,summary,status,priority,issuetype"
+        let command = "acli jira workitem search --jql \"\(jql)\" --fields \"\(fields)\" --paginate --json"
         do {
             let out = try shell(command, nil)
-            let issues = decodeJiraIssues(out, site: config.jiraSite)
+            let baseIssues = decodeJiraIssues(out, site: config.jiraSite)
+            let parentKeys = baseIssues.filter { isParentIssueType($0.issueType) }.map(\.key)
+            let parentByChildKey = await fetchParentAssignments(parentKeys: parentKeys, shell: shell)
+            let issues = baseIssues.map { $0.withParentKey(parentByChildKey[$0.key]) }
             fetchedState = State(allIssues: issues, openIssues: issues.filter { !isJiraIssueDone($0.status) })
             fetchError = nil
         } catch {
@@ -111,6 +120,50 @@ func isJiraIssueDone(_ status: String) -> Bool {
     return doneStatusKeywords.contains { lower.contains($0) }
 }
 
+// MARK: - Parent/child resolution
+
+/// Issue types treated as hierarchy roots (GitLab's old "PRD" concept). "Workstream" is
+/// this board's actual custom issue type (see the studio-migrate-to-jira skill); "Epic" is
+/// included too since that's Jira's standard parent type on boards that don't customize it.
+private let parentIssueTypes: Set<String> = ["workstream", "epic"]
+
+private func isParentIssueType(_ issueType: String?) -> Bool {
+    guard let issueType else { return false }
+    return parentIssueTypes.contains(issueType.lowercased())
+}
+
+/// For each parent-type issue key, runs `parent = <key>` and returns a childKey → parentKey
+/// map. One call per parent (not per issue) — `acli` has no bulk "give me every issue's
+/// parent" query, so this is the cheapest way to reconstruct the hierarchy.
+private func fetchParentAssignments(
+    parentKeys: [String],
+    shell: @escaping ShellRunner
+) async -> [String: String] {
+    guard !parentKeys.isEmpty else { return [:] }
+
+    return await withTaskGroup(of: [String: String].self) { group in
+        for parentKey in parentKeys {
+            group.addTask {
+                do {
+                    let command = "acli jira workitem search --jql \"parent = \(parentKey)\" --paginate --json"
+                    let out = try shell(command, nil)
+                    let childKeys = decodeJiraKeys(out)
+                    return Dictionary(childKeys.map { ($0, parentKey) }) { _, latest in latest }
+                } catch {
+                    fputs("Warning: failed to fetch children of \(parentKey) — \(error)\n", stderr)
+                    return [:]
+                }
+            }
+        }
+
+        var merged: [String: String] = [:]
+        for await partial in group {
+            merged.merge(partial) { _, new in new }
+        }
+        return merged
+    }
+}
+
 // MARK: - Raw acli JSON shapes (file-private)
 
 private struct RawJiraSearchItem: Decodable {
@@ -123,22 +176,16 @@ private struct RawJiraFields: Decodable {
     let status: RawJiraNamed?
     let priority: RawJiraNamed?
     let issuetype: RawJiraNamed?
-    let parent: RawJiraParent?
-    let created: String?
-    let updated: String?
 }
 
 private struct RawJiraNamed: Decodable {
     let name: String
 }
 
-private struct RawJiraParent: Decodable {
+/// Response shape for the `parent = <key>` children lookup — only `key` is used, so no
+/// `--fields` is requested for that query and the rest of the payload is ignored.
+private struct RawJiraKeyOnly: Decodable {
     let key: String
-    let fields: RawJiraParentFields?
-}
-
-private struct RawJiraParentFields: Decodable {
-    let summary: String?
 }
 
 // MARK: - Raw → Typed mapping
@@ -151,11 +198,20 @@ private extension JiraIssue {
             status: raw.fields.status?.name ?? "Unknown",
             priority: raw.fields.priority?.name,
             issueType: raw.fields.issuetype?.name,
-            parentKey: raw.fields.parent?.key,
-            parentSummary: raw.fields.parent?.fields?.summary,
-            createdAt: raw.fields.created,
-            updatedAt: raw.fields.updated,
+            parentKey: nil,
             webUrl: "\(site)/browse/\(raw.key)"
+        )
+    }
+
+    func withParentKey(_ parentKey: String?) -> JiraIssue {
+        JiraIssue(
+            key: key,
+            summary: summary,
+            status: status,
+            priority: priority,
+            issueType: issueType,
+            parentKey: parentKey,
+            webUrl: webUrl
         )
     }
 }
@@ -167,6 +223,13 @@ private func decodeJiraIssues(_ string: String, site: String) -> [JiraIssue] {
     let decoder = JSONDecoder()
     guard let raw = try? decoder.decode([RawJiraSearchItem].self, from: data) else { return [] }
     return raw.map { JiraIssue(from: $0, site: site) }
+}
+
+private func decodeJiraKeys(_ string: String) -> [String] {
+    guard !string.isEmpty, let data = string.data(using: .utf8) else { return [] }
+    let decoder = JSONDecoder()
+    guard let raw = try? decoder.decode([RawJiraKeyOnly].self, from: data) else { return [] }
+    return raw.map(\.key)
 }
 
 // MARK: - Diff internals
