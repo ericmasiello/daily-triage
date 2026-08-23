@@ -13,7 +13,7 @@ MOCK_DIR="$SCRIPT_DIR/mocks"
 FIXTURE_DIR="$SCRIPT_DIR/fixtures"
 
 RESULT_DIR="$(mktemp -d)"
-TOTAL=27
+TOTAL=29
 
 # Colors
 GREEN='\033[0;32m'
@@ -37,6 +37,7 @@ setup_test() {
   export MOCK_FIXTURE_SET="default"
   unset MOCK_GLAB_AUTH_FAIL 2>/dev/null || true
   unset MOCK_TD_FAIL 2>/dev/null || true
+  unset MOCK_ACLI_FAIL 2>/dev/null || true
   export PATH="$MOCK_DIR:$PATH"
 
   printf "  ${BOLD}Test: %s${RESET} ... " "$test_name"
@@ -229,10 +230,10 @@ setup_test "5. Cache expired (>1h) → FULL + cache_expired"
   old_ts=$(date -u -v-2H +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u -d "2 hours ago" +"%Y-%m-%dT%H:%M:%SZ")
   cat > "$TEST_CACHE_DIR/last-run.json" <<CACHE
 {
-  "version": 2,
+  "version": 3,
   "timestamp": "$old_ts",
   "ttl_seconds": 3600,
-  "snapshot": {"non_draft_mrs":[],"draft_mrs":[],"sandcastle_mrs":[],"reviewer_mrs":[],"assigned_mrs":[],"issues":[],"worktrees":[],"merged_branches":[]},
+  "snapshot": {"non_draft_mrs":[],"draft_mrs":[],"sandcastle_mrs":[],"reviewer_mrs":[],"assigned_mrs":[],"worktrees":[],"merged_branches":[]},
   "report": null,
   "recommendation": null,
   "todoist": null
@@ -531,8 +532,8 @@ CACHE
 
   # Open the cache file directly (not stdin), parse it, and print the value of the 'version' key.
   cache_version=$(python3 -c "import json; print(json.load(open('$TEST_CACHE_DIR/last-run.json'))['version'])" 2>/dev/null)
-  if [[ "$cache_version" != "2" ]]; then
-    fail "cache should be rewritten as version 2, got ${cache_version:-parse_error}"
+  if [[ "$cache_version" != "3" ]]; then
+    fail "cache should be rewritten as version 3, got ${cache_version:-parse_error}"
     ok=false
   fi
 
@@ -565,7 +566,7 @@ setup_test "16. FULL output contains ---ANALYSIS--- with prd_hierarchy"
   fi
 
   # Parse the ANALYSIS JSON and verify the prd_hierarchy array has exactly the shape we expect:
-  # - exactly 1 PRD entry with prd_iid == 7
+  # - exactly 1 PRD entry with parent_key == "ERICRULEZ-7" (Jira issues are string-keyed)
   # - that PRD has 3 child issues
   # - the completion block reports total=3, closed=2, percentage=66%
   if ! echo "$analysis_json" | python3 -c "
@@ -575,7 +576,7 @@ assert 'prd_hierarchy' in data, 'missing prd_hierarchy key'
 h = data['prd_hierarchy']
 assert len(h) == 1, f'expected 1 PRD, got {len(h)}'
 prd = h[0]
-assert prd['prd_iid'] == 7, f'expected prd_iid 7, got {prd[\"prd_iid\"]}'
+assert prd['parent_key'] == 'ERICRULEZ-7', f'expected parent_key ERICRULEZ-7, got {prd[\"parent_key\"]}'
 assert len(prd['children']) == 3, f'expected 3 children, got {len(prd[\"children\"])}'
 assert prd['completion']['total'] == 3, f'expected total 3, got {prd[\"completion\"][\"total\"]}'
 assert prd['completion']['closed'] == 2, f'expected closed 2, got {prd[\"completion\"][\"closed\"]}'
@@ -739,42 +740,44 @@ setup_test "21. Issue tiering: Tier 2/3 assignment with priority boosts"
 
   # Parse the ANALYSIS JSON and verify the tier_2_issues and tier_3_issues arrays:
   # - tier_2_issues: exactly 1 item — the issue from the near-complete (80%) workstream
-  # - tier_3_issues: exactly 3 items, sorted by priority label (p::1 first, then p::3, then none)
-  # - a p::1 priority issue must NOT appear in tier_2 (priority alone doesn't promote tiers)
+  # - tier_3_issues: exactly 3 items, sorted by Jira priority (Highest first, then Low, then none)
+  # - a Highest-priority issue must NOT appear in tier_2 (priority alone doesn't promote tiers)
   # - all tier_3 items must have null workstream_completion and reason "remaining_by_value_age"
+  # Issues are Jira work items now, keyed by string 'key' (e.g. "ERICRULEZ-103") rather
+  # than an integer 'iid'.
   if ! echo "$analysis_json" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 
-# Tier 2: exactly 1 issue (iid 103) from the 80%-complete workstream
+# Tier 2: exactly 1 issue (ERICRULEZ-103) from the 80%-complete workstream
 t2 = data['tier_2_issues']
 assert len(t2) == 1, f'tier_2_issues: expected 1, got {len(t2)}'
-assert t2[0]['iid'] == 103, f'tier_2 iid: expected 103, got {t2[0][\"iid\"]}'
+assert t2[0]['key'] == 'ERICRULEZ-103', f'tier_2 key: expected ERICRULEZ-103, got {t2[0][\"key\"]}'
 assert t2[0]['workstream_completion'] == 80, f'tier_2 completion: expected 80, got {t2[0][\"workstream_completion\"]}'
-assert t2[0].get('priority') == 'p::2', f'tier_2 priority: expected p::2, got {t2[0].get(\"priority\")}'
+assert t2[0].get('priority') == 'Medium', f'tier_2 priority: expected Medium, got {t2[0].get(\"priority\")}'
 assert t2[0]['reason'] == 'near_complete_workstream', f'tier_2 reason wrong: {t2[0][\"reason\"]}'
 
-# Tier 3: 3 issues sorted by priority (p::1 > p::3 > none)
+# Tier 3: 3 issues sorted by priority (Highest > Low > none)
 t3 = data['tier_3_issues']
 assert len(t3) == 3, f'tier_3_issues: expected 3, got {len(t3)}'
-assert t3[0]['iid'] == 201, f'tier_3[0] iid: expected 201 (p::1), got {t3[0][\"iid\"]}'
-assert t3[0].get('priority') == 'p::1', f'tier_3[0] priority: expected p::1, got {t3[0].get(\"priority\")}'
-assert t3[1]['iid'] == 203, f'tier_3[1] iid: expected 203 (p::3), got {t3[1][\"iid\"]}'
-assert t3[1].get('priority') == 'p::3', f'tier_3[1] priority: expected p::3, got {t3[1].get(\"priority\")}'
-assert t3[2]['iid'] == 300, f'tier_3[2] iid: expected 300 (no priority), got {t3[2][\"iid\"]}'
+assert t3[0]['key'] == 'ERICRULEZ-201', f'tier_3[0] key: expected ERICRULEZ-201 (Highest), got {t3[0][\"key\"]}'
+assert t3[0].get('priority') == 'Highest', f'tier_3[0] priority: expected Highest, got {t3[0].get(\"priority\")}'
+assert t3[1]['key'] == 'ERICRULEZ-203', f'tier_3[1] key: expected ERICRULEZ-203 (Low), got {t3[1][\"key\"]}'
+assert t3[1].get('priority') == 'Low', f'tier_3[1] priority: expected Low, got {t3[1].get(\"priority\")}'
+assert t3[2]['key'] == 'ERICRULEZ-300', f'tier_3[2] key: expected ERICRULEZ-300 (no priority), got {t3[2][\"key\"]}'
 assert t3[2].get('priority') is None, f'tier_3[2] priority: expected null, got {t3[2].get(\"priority\")}'
 
-# Cross-tier check: p::1 issue stays in Tier 3 (not promoted to Tier 2)
-t2_iids = {i['iid'] for i in t2}
-assert 201 not in t2_iids, 'p::1 issue (201) must NOT be promoted to Tier 2'
+# Cross-tier check: Highest-priority issue stays in Tier 3 (not promoted to Tier 2)
+t2_keys = {i['key'] for i in t2}
+assert 'ERICRULEZ-201' not in t2_keys, 'Highest-priority issue (ERICRULEZ-201) must NOT be promoted to Tier 2'
 
 # Tier 3 workstream_completion should be absent or null
 for item in t3:
-    assert item.get('workstream_completion') is None, f'tier_3 item {item[\"iid\"]} should have null workstream_completion'
+    assert item.get('workstream_completion') is None, f'tier_3 item {item[\"key\"]} should have null workstream_completion'
 
 # Tier 3 reason
 for item in t3:
-    assert item['reason'] == 'remaining_by_value_age', f'tier_3 item {item[\"iid\"]} reason wrong: {item[\"reason\"]}'
+    assert item['reason'] == 'remaining_by_value_age', f'tier_3 item {item[\"key\"]} reason wrong: {item[\"reason\"]}'
 " 2>/dev/null; then
     fail "Issue tiering content is incorrect"
     ok=false
@@ -1082,6 +1085,59 @@ assert rq[0]['role'] == 'assignee', f'review_queue role wrong: {rq[0][\"role\"]}
     fail "review_queue not filtered for archived repo"
     ok=false
   fi
+
+  $ok && pass
+)
+teardown_test
+
+# ── Test 28: Jira failure with no cache → exit 1 + actionable error ─────────
+
+setup_test "28. Jira failure with no cache → exit 1 + actionable error"
+(
+  export MOCK_ACLI_FAIL=1
+
+  exit_code=0
+  stdout=$("$BINARY" 2>/tmp/test28_stderr) || exit_code=$?
+  stderr_content=$(cat /tmp/test28_stderr)
+  rm -f /tmp/test28_stderr
+  ok=true
+
+  assert_exit_code "$exit_code" "1" || ok=false
+
+  if [[ -n "$stdout" ]]; then
+    fail "stdout should be empty when Jira fetch fails with no cache"
+    ok=false
+  fi
+
+  if ! echo "$stderr_content" | grep -qi "jira"; then
+    fail "stderr should mention Jira"
+    ok=false
+  fi
+
+  if ! echo "$stderr_content" | grep -q "acli"; then
+    fail "stderr should mention acli"
+    ok=false
+  fi
+
+  $ok && pass
+)
+teardown_test
+
+# ── Test 29: Jira failure with cache available → graceful degradation ──────
+
+setup_test "29. Jira failure with cache available → degrades to cached data, exit 0"
+(
+  # First run: acli succeeds, Jira data cached
+  "$BINARY" >/dev/null 2>&1
+
+  # Second run: acli fails, but cache has Jira data — should degrade, not exit 1
+  export MOCK_ACLI_FAIL=1
+  stdout=$("$BINARY" 2>/dev/null)
+  exit_code=$?
+  ok=true
+
+  assert_exit_code "$exit_code" "0" || ok=false
+  assert_stdout_contains "$stdout" "MODE: NO_CHANGES" || ok=false
 
   $ok && pass
 )

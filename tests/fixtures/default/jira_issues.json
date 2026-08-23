@@ -1,0 +1,24 @@
+[
+  {
+    "key": "ERICRULEZ-10",
+    "fields": {
+      "summary": "Fix navigation bug",
+      "status": {"name": "To Do"},
+      "priority": {"name": "High"},
+      "issuetype": {"name": "Bug"},
+      "created": "2026-04-20T08:00:00.000+0000",
+      "updated": "2026-04-20T08:00:00.000+0000"
+    }
+  },
+  {
+    "key": "ERICRULEZ-11",
+    "fields": {
+      "summary": "Add dark mode",
+      "status": {"name": "To Do"},
+      "priority": {"name": "Medium"},
+      "issuetype": {"name": "Task"},
+      "created": "2026-04-25T08:00:00.000+0000",
+      "updated": "2026-04-25T08:00:00.000+0000"
+    }
+  }
+]

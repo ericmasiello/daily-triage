@@ -50,6 +50,8 @@ struct Config {
     let ttlSeconds: TimeInterval
     let triageAuthor: String
     let todayDate: String
+    let jiraProject: String
+    let jiraSite: String
 
     static func fromEnvironment() -> Config {
         let cacheDir: String = {
@@ -83,7 +85,9 @@ struct Config {
             studioDir: studioDir,
             ttlSeconds: 3600,
             triageAuthor: ProcessInfo.processInfo.environment["TRIAGE_AUTHOR"] ?? "ericmasiello",
-            todayDate: todayDate
+            todayDate: todayDate,
+            jiraProject: ProcessInfo.processInfo.environment["TRIAGE_JIRA_PROJECT"] ?? "ERICRULEZ",
+            jiraSite: ProcessInfo.processInfo.environment["TRIAGE_JIRA_SITE"] ?? "https://vistaprint.atlassian.net"
         )
     }
 }

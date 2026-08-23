@@ -1,0 +1,60 @@
+[
+  {
+    "key": "ERICRULEZ-7",
+    "fields": {
+      "summary": "PRD: Analysis engine for triage cache",
+      "status": {"name": "In Progress"},
+      "priority": {"name": "Medium"},
+      "issuetype": {"name": "Epic"},
+      "created": "2026-04-10T08:00:00.000+0000",
+      "updated": "2026-04-10T08:00:00.000+0000"
+    }
+  },
+  {
+    "key": "ERICRULEZ-8",
+    "fields": {
+      "summary": "Analysis: basic structure",
+      "status": {"name": "Done"},
+      "priority": {"name": "Medium"},
+      "issuetype": {"name": "Task"},
+      "parent": {"key": "ERICRULEZ-7", "fields": {"summary": "PRD: Analysis engine for triage cache"}},
+      "created": "2026-04-12T08:00:00.000+0000",
+      "updated": "2026-04-12T08:00:00.000+0000"
+    }
+  },
+  {
+    "key": "ERICRULEZ-9",
+    "fields": {
+      "summary": "Analysis: hierarchy detection",
+      "status": {"name": "To Do"},
+      "priority": {"name": "Medium"},
+      "issuetype": {"name": "Task"},
+      "parent": {"key": "ERICRULEZ-7", "fields": {"summary": "PRD: Analysis engine for triage cache"}},
+      "created": "2026-04-14T08:00:00.000+0000",
+      "updated": "2026-04-14T08:00:00.000+0000"
+    }
+  },
+  {
+    "key": "ERICRULEZ-10",
+    "fields": {
+      "summary": "Analysis: completion percentages",
+      "status": {"name": "Done"},
+      "priority": {"name": "Medium"},
+      "issuetype": {"name": "Task"},
+      "parent": {"key": "ERICRULEZ-7", "fields": {"summary": "PRD: Analysis engine for triage cache"}},
+      "created": "2026-04-16T08:00:00.000+0000",
+      "updated": "2026-04-16T08:00:00.000+0000"
+    }
+  },
+  {
+    "key": "ERICRULEZ-11",
+    "fields": {
+      "summary": "Unrelated issue",
+      "status": {"name": "To Do"},
+      "priority": {"name": "Medium"},
+      "issuetype": {"name": "Bug"},
+      "created": "2026-04-18T08:00:00.000+0000",
+      "updated": "2026-04-18T08:00:00.000+0000"
+    }
+  }
+]

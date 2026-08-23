@@ -1,0 +1,42 @@
+#!/bin/bash
+# Mock acli CLI for integration tests.
+# Returns fixture JSON based on MOCK_FIXTURE_DIR and MOCK_FIXTURE_SET env vars.
+
+FIXTURE_DIR="${MOCK_FIXTURE_DIR:?MOCK_FIXTURE_DIR must be set}"
+FIXTURE_SET="${MOCK_FIXTURE_SET:-default}"
+
+if [[ "${MOCK_ACLI_FAIL}" == "1" ]]; then
+  echo "error: not logged in — run 'acli jira auth login'" >&2
+  exit 1
+fi
+
+args="$*"
+file="$FIXTURE_DIR/${FIXTURE_SET}/jira_issues.json"
+
+if [[ "$args" == *"parent = "* ]]; then
+  # JiraService.fetchParentAssignments: `--jql "parent = <KEY>"`. The real acli can't
+  # return `parent` from the main search (see JiraService.fetch), so JiraService asks for
+  # each parent-type issue's children this way instead. Reconstruct that here by filtering
+  # the same jira_issues.json fixture on each item's embedded fields.parent.key — no
+  # separate per-parent fixture files needed.
+  parent_key=$(echo "$args" | grep -oE 'parent = [A-Za-z0-9_-]+' | awk '{print $3}')
+  if [[ -f "$file" ]]; then
+    python3 -c "
+import json
+data = json.load(open('$file'))
+children = [i for i in data if (i.get('fields', {}).get('parent') or {}).get('key') == '$parent_key']
+print(json.dumps(children))
+"
+  else
+    echo '[]'
+  fi
+elif [[ "$args" == *"jira workitem search"* ]]; then
+  if [[ -f "$file" ]]; then
+    cat "$file"
+  else
+    echo '[]'
+  fi
+else
+  echo "mock acli: unknown command: $args" >&2
+  exit 1
+fi

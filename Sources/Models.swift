@@ -19,27 +19,18 @@ struct MR: Codable, Equatable {
     let repoPath: String?
 }
 
-/// An issue with the fields relevant for triage.
-struct Issue: Codable, Equatable {
-    let iid: Int
-    let title: String
-    let state: String?
-    let labels: [String]
-    let createdAt: String?
-    let webUrl: String?
-}
-
 struct Snapshot: Codable {
     var nonDraftMrs: [MR]
     var draftMrs: [MR]
     var sandcastleMrs: [MR]
     var reviewerMrs: [MR]
     var assignedMrs: [MR]
-    var issues: [Issue]
     var worktrees: [String]
     var mergedBranches: [String]
     var todoist: TodoistService.State?
     var todoistError: String?
+    var jira: JiraService.State?
+    var jiraError: String?
 
     var gitlab: GitLabService.State {
         get {
@@ -49,7 +40,6 @@ struct Snapshot: Codable {
                 sandcastleMrs: sandcastleMrs,
                 reviewerMrs: reviewerMrs,
                 assignedMrs: assignedMrs,
-                issues: issues,
                 worktrees: worktrees,
                 mergedBranches: mergedBranches
             )
@@ -60,23 +50,29 @@ struct Snapshot: Codable {
             sandcastleMrs = newValue.sandcastleMrs
             reviewerMrs = newValue.reviewerMrs
             assignedMrs = newValue.assignedMrs
-            issues = newValue.issues
             worktrees = newValue.worktrees
             mergedBranches = newValue.mergedBranches
         }
     }
 
-    init(gitlab: GitLabService.State, todoist: TodoistService.State?, todoistError: String?) {
+    init(
+        gitlab: GitLabService.State,
+        todoist: TodoistService.State?,
+        todoistError: String?,
+        jira: JiraService.State?,
+        jiraError: String?
+    ) {
         nonDraftMrs = gitlab.nonDraftMrs
         draftMrs = gitlab.draftMrs
         sandcastleMrs = gitlab.sandcastleMrs
         reviewerMrs = gitlab.reviewerMrs
         assignedMrs = gitlab.assignedMrs
-        issues = gitlab.issues
         worktrees = gitlab.worktrees
         mergedBranches = gitlab.mergedBranches
         self.todoist = todoist
         self.todoistError = todoistError
+        self.jira = jira
+        self.jiraError = jiraError
     }
 
     init(
@@ -85,22 +81,24 @@ struct Snapshot: Codable {
         sandcastleMrs: [MR],
         reviewerMrs: [MR] = [],
         assignedMrs: [MR] = [],
-        issues: [Issue],
         worktrees: [String],
         mergedBranches: [String],
         todoist: TodoistService.State? = nil,
-        todoistError: String? = nil
+        todoistError: String? = nil,
+        jira: JiraService.State? = nil,
+        jiraError: String? = nil
     ) {
         self.nonDraftMrs = nonDraftMrs
         self.draftMrs = draftMrs
         self.sandcastleMrs = sandcastleMrs
         self.reviewerMrs = reviewerMrs
         self.assignedMrs = assignedMrs
-        self.issues = issues
         self.worktrees = worktrees
         self.mergedBranches = mergedBranches
         self.todoist = todoist
         self.todoistError = todoistError
+        self.jira = jira
+        self.jiraError = jiraError
     }
 }
 
