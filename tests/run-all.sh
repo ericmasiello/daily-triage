@@ -13,7 +13,7 @@ MOCK_DIR="$SCRIPT_DIR/mocks"
 FIXTURE_DIR="$SCRIPT_DIR/fixtures"
 
 RESULT_DIR="$(mktemp -d)"
-TOTAL=29
+TOTAL=30
 
 # Colors
 GREEN='\033[0;32m'
@@ -1143,6 +1143,26 @@ setup_test "29. Jira failure with cache available → degrades to cached data, e
 )
 teardown_test
 
+# ── Test 30: NO_CHANGES includes ANALYSIS with draft_mrs ────────────────────
+
+setup_test "30. NO_CHANGES output includes ANALYSIS with draft_mrs"
+(
+  "$BINARY" >/dev/null 2>&1
+
+  stdout=$("$BINARY" 2>/dev/null)
+  exit_code=$?
+  ok=true
+
+  assert_exit_code "$exit_code" "0" || ok=false
+  assert_stdout_contains "$stdout" "MODE: NO_CHANGES" || ok=false
+  assert_stdout_contains "$stdout" "---ANALYSIS---" || ok=false
+  assert_stdout_contains "$stdout" "---END_ANALYSIS---" || ok=false
+  assert_stdout_contains "$stdout" "draft_mrs" || ok=false
+
+  $ok && pass
+)
+teardown_test
+
 # ── Lint & format checks ─────────────────────────────────────────────────────
 
 STATIC_FAILED=false
@@ -1151,6 +1171,9 @@ printf "\n${BOLD}Static analysis:${RESET}\n"
 
 if command -v swiftformat &>/dev/null; then
   printf "  ${BOLD}swiftformat${RESET} ... "
+  pre_fmt_diff="$(mktemp)"
+  post_fmt_diff="$(mktemp)"
+  git -C "$REPO_DIR" diff -- Sources/ >"$pre_fmt_diff" 2>/dev/null || true
   fmt_exit=0
   swiftformat "$REPO_DIR/Sources/" 2>/tmp/swiftformat-err.txt || fmt_exit=$?
   if [[ $fmt_exit -ne 0 ]]; then
@@ -1158,14 +1181,18 @@ if command -v swiftformat &>/dev/null; then
     printf "    ${RED}→ swiftformat exited $fmt_exit:${RESET}\n"
     cat /tmp/swiftformat-err.txt | sed 's/^/    /'
     STATIC_FAILED=true
-  elif git -C "$REPO_DIR" diff --exit-code Sources/ >/dev/null 2>&1; then
-    printf "${GREEN}PASS${RESET}\n"
   else
-    printf "${RED}FAIL${RESET}\n"
-    printf "    ${RED}→ swiftformat modified files; review and commit the changes${RESET}\n"
-    git -C "$REPO_DIR" diff --stat Sources/ 2>/dev/null | sed 's/^/    /'
-    STATIC_FAILED=true
+    git -C "$REPO_DIR" diff -- Sources/ >"$post_fmt_diff" 2>/dev/null || true
+    if cmp -s "$pre_fmt_diff" "$post_fmt_diff"; then
+      printf "${GREEN}PASS${RESET}\n"
+    else
+      printf "${RED}FAIL${RESET}\n"
+      printf "    ${RED}→ swiftformat modified files; review and commit the changes${RESET}\n"
+      git -C "$REPO_DIR" diff --stat Sources/ 2>/dev/null | sed 's/^/    /'
+      STATIC_FAILED=true
+    fi
   fi
+  rm -f "$pre_fmt_diff" "$post_fmt_diff"
 else
   printf "  ${BOLD}swiftformat${RESET} ... ${RED}not installed${RESET} (run: brew bundle)\n"
   STATIC_FAILED=true
