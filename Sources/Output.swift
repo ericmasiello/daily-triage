@@ -23,10 +23,12 @@ func formatFull(reason: String, snapshot: Snapshot, serviceLines: [String]) -> S
     return lines.joined(separator: "\n")
 }
 
-func formatNoChanges(ageMinutes: Int, report: String?, recommendation: String?) -> String {
+func formatNoChanges(ageMinutes: Int, analysisLines: [String], report: String?, recommendation: String?) -> String {
     var lines: [String] = []
     lines.append("MODE: NO_CHANGES")
     lines.append("CACHE_AGE_MINUTES: \(ageMinutes)")
+    lines.append("")
+    lines += analysisLines
     lines.append("")
     lines.append("---PREVIOUS_REPORT---")
     lines.append(report ?? "(no report cached)")
@@ -37,11 +39,19 @@ func formatNoChanges(ageMinutes: Int, report: String?, recommendation: String?) 
     return lines.joined(separator: "\n")
 }
 
-func formatDelta(ageMinutes: Int, diff: DiffResult, report: String?, recommendation: String?) -> String {
+func formatDelta(
+    ageMinutes: Int,
+    analysisLines: [String],
+    diff: DiffResult,
+    report: String?,
+    recommendation: String?
+) -> String {
     var lines: [String] = []
     lines.append("MODE: DELTA")
     lines.append("CACHE_AGE_MINUTES: \(ageMinutes)")
     lines.append("CHANGES_SUMMARY: \(diff.summary)")
+    lines.append("")
+    lines += analysisLines
     lines.append("")
     lines.append("---CHANGES---")
     for change in diff.changes {

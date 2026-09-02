@@ -9,6 +9,7 @@ import Foundation
 struct AnalysisResult: Codable {
     let prdHierarchy: [PRDHierarchyEntry]
     let tier1Mrs: [Tier1MR]
+    let draftMrs: [DraftMR]
     let reviewQueue: [ReviewQueueMR]
     let tier2Issues: [TierIssue]
     let tier3Issues: [TierIssue]
@@ -18,6 +19,7 @@ struct AnalysisResult: Codable {
     enum CodingKeys: String, CodingKey {
         case prdHierarchy = "prd_hierarchy"
         case tier1Mrs = "tier_1_mrs"
+        case draftMrs = "draft_mrs"
         case reviewQueue = "review_queue"
         case tier2Issues = "tier_2_issues"
         case tier3Issues = "tier_3_issues"
@@ -31,6 +33,14 @@ struct Tier1MR: Codable {
     let title: String
     let reviewStatus: String
     let ageHours: Int
+    let webUrl: String?
+}
+
+struct DraftMR: Codable {
+    let iid: Int
+    let title: String
+    let ageHours: Int
+    let userNotesCount: Int
     let webUrl: String?
 }
 
@@ -97,6 +107,7 @@ func computeAnalysis(snapshot: Snapshot, todayDate: String) -> AnalysisResult {
     let parentByKey = tiers.parentByKey
 
     let tier1 = rankTier1MRs(snapshot.nonDraftMrs, referenceDate: referenceDate)
+    let draftMrs = rankDraftMRs(snapshot.draftMrs, referenceDate: referenceDate)
     let reviewQueue = buildReviewQueue(
         reviewerMrs: snapshot.reviewerMrs,
         assignedMrs: snapshot.assignedMrs,
@@ -121,6 +132,7 @@ func computeAnalysis(snapshot: Snapshot, todayDate: String) -> AnalysisResult {
     return AnalysisResult(
         prdHierarchy: entries,
         tier1Mrs: tier1,
+        draftMrs: draftMrs,
         reviewQueue: reviewQueue,
         tier2Issues: tier2,
         tier3Issues: tier3,
@@ -312,6 +324,29 @@ private func buildReviewQueue(
     for mr in assignedMrs { enqueue(mr, "assignee") }
 
     return byURL.values.sorted { lhs, rhs in lhs.ageHours > rhs.ageHours }
+}
+
+private func rankDraftMRs(_ mrs: [MR], referenceDate: Date) -> [DraftMR] {
+    let isoFormatter = ISO8601DateFormatter()
+    return mrs
+        .map { mr in
+            let ageHours: Int = if let created = mr.createdAt,
+                                   let createdDate = isoFormatter.date(from: created) {
+                max(0, Int(referenceDate.timeIntervalSince(createdDate) / 3600))
+            } else {
+                0
+            }
+            return DraftMR(
+                iid: mr.iid,
+                title: mr.title,
+                ageHours: ageHours,
+                userNotesCount: mr.userNotesCount ?? 0,
+                webUrl: mr.webUrl
+            )
+        }
+        .sorted { lhs, rhs in
+            lhs.ageHours != rhs.ageHours ? lhs.ageHours > rhs.ageHours : lhs.iid < rhs.iid
+        }
 }
 
 private func reviewStatus(for mr: MR) -> String {

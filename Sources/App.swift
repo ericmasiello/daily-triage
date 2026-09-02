@@ -51,8 +51,14 @@ struct TriageCache {
         if diff.signals.contains(.priorityChange) {
             emitFull(reason: "priority_labels_changed", services: services, options: outputOptions, config: config)
         } else if diff.isEmpty {
+            let analysis = computeAnalysis(snapshot: snapshot, todayDate: config.todayDate)
             emit(
-                formatNoChanges(ageMinutes: ageMinutes, report: cache.report, recommendation: cache.recommendation),
+                formatNoChanges(
+                    ageMinutes: ageMinutes,
+                    analysisLines: formatAnalysis(analysis),
+                    report: cache.report,
+                    recommendation: cache.recommendation
+                ),
                 options: outputOptions,
                 config: config
             )
@@ -61,6 +67,7 @@ struct TriageCache {
             emit(
                 formatDelta(
                     ageMinutes: ageMinutes,
+                    analysisLines: formatAnalysis(analysis),
                     diff: diff,
                     report: cache.report,
                     recommendation: cache.recommendation

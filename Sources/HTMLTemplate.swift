@@ -200,6 +200,7 @@ private let htmlPageCSS = """
         }
 
         .analysis-card--tier1 { border-left: 3px solid var(--accent-blue); }
+        .analysis-card--draft { border-left: 3px solid var(--accent-orange); }
         .analysis-card--tier2 { border-left: 3px solid var(--accent-purple); }
         .analysis-card--warning { border-left: 3px solid var(--accent-yellow); }
 

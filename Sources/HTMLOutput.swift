@@ -134,6 +134,10 @@ private func renderAnalysis(_ jsonString: String) -> String {
         cards.append(mrTable(title: "Your MRs — Needs Action", mrs: mrs, accent: "tier1"))
     }
 
+    if let drafts = obj["draft_mrs"] as? [[String: Any]], !drafts.isEmpty {
+        cards.append(draftMrTable(drafts))
+    }
+
     // Review queue — cross-repo MRs where the user is reviewer or assignee
     if let queue = obj["review_queue"] as? [[String: Any]], !queue.isEmpty {
         cards.append(reviewQueueTable(queue))
@@ -251,6 +255,41 @@ private func reviewQueueTable(_ queue: [[String: Any]]) -> String {
       <h3>Review Queue (\(queue.count))</h3>
       <table class="mr-table">
         <thead><tr><th>MR</th><th>Title</th><th>Role</th><th>Age</th></tr></thead>
+        <tbody>
+    \(tableRows)
+        </tbody>
+      </table>
+    </div>
+    """
+}
+
+private func draftMrTable(_ mrs: [[String: Any]]) -> String {
+    let rows = mrs.map { mr -> String in
+        let iid = mr["iid"].flatMap { anyToString($0) } ?? "?"
+        let mrTitle = mr["title"] as? String ?? ""
+        let notes = mr["user_notes_count"].flatMap { anyToString($0) } ?? "0"
+        let age = mr["age_hours"].flatMap { anyToString($0) } ?? ""
+        let url = mr["web_url"] as? String ?? ""
+
+        let iidLink = url.isEmpty ? "!\(iid)" : "<a href=\"\(htmlEscape(url))\" target=\"_blank\">!\(iid)</a>"
+        let ageText = age.isEmpty ? "" : "\(age)h"
+
+        return """
+            <tr>
+              <td class="mr-iid">\(iidLink)</td>
+              <td class="mr-title">\(htmlEscape(mrTitle))</td>
+              <td>\(htmlEscape(notes))</td>
+              <td class="mr-age">\(ageText)</td>
+            </tr>
+        """
+    }
+    let tableRows = rows.joined(separator: "\n")
+
+    return """
+    <div class="analysis-card analysis-card--draft">
+      <h3>Your Draft MRs</h3>
+      <table class="mr-table">
+        <thead><tr><th>MR</th><th>Title</th><th>Notes</th><th>Age</th></tr></thead>
         <tbody>
     \(tableRows)
         </tbody>
